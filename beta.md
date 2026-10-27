@@ -1,5 +1,7 @@
 # Beta
 
+`beta.md` takes priority. `PLAN.md` is old and is not the decision maker. Where they disagree, follow this document.
+
 An open-source, self-hosted proxy that holds your real API keys. Apps get virtual keys instead. Each virtual key can be limited, watched and revoked without touching the real key.
 
 The beta supports HTTP only. Other protocols, such as Redis and MongoDB, may come later. The beta keeps a `protocol` field on upstreams but does not build anything else for them.
