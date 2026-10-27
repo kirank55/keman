@@ -1,0 +1,22 @@
+# Keman server settings. Upstreams, credentials, virtual keys, and policies
+# live in the database and are changed with the CLI or the admin API.
+proxy_listen: 0.0.0.0:8080
+admin_listen: 127.0.0.1:8081
+database: keman.db
+trusted_proxies: []
+# geoip_country_db: /var/lib/keman/GeoLite2-Country.mmdb
+# geoip_asn_db: /var/lib/keman/GeoLite2-ASN.mmdb
+# prices_file: /etc/keman/prices.json
+# master_key_file: /etc/keman/master.key
+default_reservation_microusd: 100000
+event_queue_size: 10000
+event_retention: 336h
+detection_retention: 2160h
+spend_flush_interval: 5s
+spend_fail_closed_after: 1m
+max_request_body_bytes: 33554432
+max_header_bytes: 65536
+read_header_timeout: 10s
+upstream_dial_timeout: 10s
+upstream_response_header_timeout: 60s
+invalid_key_rpm: 60
