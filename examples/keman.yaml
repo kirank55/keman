@@ -7,6 +7,7 @@ trusted_proxies: []
 # geoip_country_db: /var/lib/keman/GeoLite2-Country.mmdb
 # geoip_asn_db: /var/lib/keman/GeoLite2-ASN.mmdb
 # prices_file: /etc/keman/prices.json
+# init writes master.key beside this file when master_key_file is unset.
 # master_key_file: /etc/keman/master.key
 default_reservation_microusd: 100000
 event_queue_size: 10000

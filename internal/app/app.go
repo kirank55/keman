@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	stdlog "log"
 	"log/slog"
 	"net"
 	"net/http"
@@ -84,12 +86,51 @@ func Init(ctx context.Context, cfg config.Config, master []byte) (string, error)
 	return token, nil
 }
 
+// Initialized reports whether the database file already contains an install.
+// A missing file is not initialized and is not created.
+func Initialized(ctx context.Context, database string) (bool, error) {
+	if _, err := os.Stat(database); err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	st, err := store.Open(database)
+	if err != nil {
+		return false, err
+	}
+	defer st.Close()
+	_, ok, err := st.LoadMeta(ctx)
+	return ok, err
+}
+
+// CheckMaster reports whether master unwraps the data key of an existing install.
+func CheckMaster(ctx context.Context, cfg config.Config, master []byte) error {
+	st, err := store.Open(cfg.Database)
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+	meta, ok, err := st.LoadMeta(ctx)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("database is not initialized; run keman init")
+	}
+	if _, err := cryptoenc.UnwrapDEK(master, meta.DEKNonce, meta.WrappedDEK); err != nil {
+		return fmt.Errorf("master key could not unwrap the data key")
+	}
+	return nil
+}
+
 type Option func(*build)
 
 type build struct {
-	clock clock.Clock
-	geo   geoip.Resolver
-	log   *slog.Logger
+	clock     clock.Clock
+	geo       geoip.Resolver
+	log       *slog.Logger
+	logWriter io.Writer
 }
 
 func WithClock(c clock.Clock) Option { return func(b *build) { b.clock = c } }
@@ -97,6 +138,10 @@ func WithGeoIP(g geoip.Resolver) Option {
 	return func(b *build) { b.geo = g }
 }
 func WithLogger(l *slog.Logger) Option { return func(b *build) { b.log = l } }
+
+// WithLogWriter sends server logs to w. The writer is wrapped with the process
+// redactor, so credentials added later are scrubbed.
+func WithLogWriter(w io.Writer) Option { return func(b *build) { b.logWriter = w } }
 
 // App is one running Keman process.
 type App struct {
@@ -137,8 +182,13 @@ func Open(ctx context.Context, cfg config.Config, master []byte, opts ...Option)
 	secrets := &redact.Secrets{}
 	log := b.log
 	if log == nil {
-		log = slog.New(redact.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}), secrets))
+		logOut := io.Writer(os.Stderr)
+		if b.logWriter != nil {
+			logOut = b.logWriter
+		}
+		log = slog.New(redact.New(slog.NewTextHandler(logOut, &slog.HandlerOptions{Level: slog.LevelInfo}), secrets))
 	}
+	errLog := stdlog.New(logWriter{log}, "", 0)
 	if _, err := os.Stat(cfg.Database); err != nil {
 		if os.IsNotExist(err) {
 			return nil, fmt.Errorf("database is not initialized; run keman init")
@@ -226,15 +276,26 @@ func Open(ctx context.Context, cfg config.Config, master []byte, opts ...Option)
 		ReadHeaderTimeout: cfg.ReadHeaderTimeout,
 		IdleTimeout:       120 * time.Second,
 		MaxHeaderBytes:    cfg.MaxHeaderBytes,
-		ErrorLog:          slog.NewLogLogger(redact.New(slog.NewTextHandler(os.Stderr, nil), secrets), slog.LevelError),
+		ErrorLog:          errLog,
 	}
 	a.adminSrv = &http.Server{
 		Handler:           &admin.Handler{Service: a.svc, Metrics: promhttp.HandlerFor(a.metrics.Registry, promhttp.HandlerOpts{})},
 		ReadHeaderTimeout: cfg.ReadHeaderTimeout,
 		IdleTimeout:       120 * time.Second,
 		MaxHeaderBytes:    cfg.MaxHeaderBytes,
+		ErrorLog:          errLog,
 	}
 	return a, nil
+}
+
+type logWriter struct{ log *slog.Logger }
+
+func (w logWriter) Write(p []byte) (int, error) {
+	msg := strings.TrimSpace(string(p))
+	if msg != "" && w.log != nil {
+		w.log.Error(msg)
+	}
+	return len(p), nil
 }
 
 func (a *App) load(ctx context.Context, geo geoip.Resolver) error {

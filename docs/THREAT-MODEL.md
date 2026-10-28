@@ -63,4 +63,4 @@ Rules, severities, the learning period, incident grouping, webhook signing (`X-K
 
 ## Out of scope
 
-Dashboard UI, multi-tenant installs, and TLS termination on the proxy listener. The listener is HTTP/1.1 and cleartext HTTP/2.
+A web dashboard, multi-tenant installs, and TLS termination on the proxy listener. `keman`, with no command, is a terminal client of the admin API and uses the same admin token. When the admin listener is down, `keman` starts the server in-process and stops it on exit, so that process holds the master key and decrypted credentials the same way `keman serve` does. The listener is HTTP/1.1 and cleartext HTTP/2.

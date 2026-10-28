@@ -368,6 +368,14 @@ func (s *State) committed(id, period string) int64 {
 	return s.spend[spendKey{id, period}].micro
 }
 
+// Spend returns the committed daily total, the committed monthly total,
+// and the in-flight reservation for a key.
+func (s *State) Spend(id string, now time.Time) (day, month, open int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.committed(id, DayPeriod(now)), s.committed(id, MonthPeriod(now)), s.open[id]
+}
+
 // Reconcile replaces a reservation with the actual cost.
 func (s *State) Reconcile(id string, reservation, actual int64, now time.Time) {
 	s.mu.Lock()

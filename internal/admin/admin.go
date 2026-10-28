@@ -681,6 +681,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		id := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/keys/"), "/dry-run")
 		rep, err := h.Service.DryRun(r.Context(), id)
 		write(w, rep, err)
+	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/keys/") && strings.HasSuffix(r.URL.Path, "/usage"):
+		id := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/keys/"), "/usage")
+		if _, ok := h.Service.State.Key(id); !ok {
+			write(w, nil, &OpError{Status: 404, Code: "not_found", Message: "Virtual key not found."})
+			return
+		}
+		usage, err := h.Service.Store.KeyUsage(r.Context(), id, 12)
+		write(w, usage, err)
 	case r.Method == http.MethodPost && r.URL.Path == "/v1/rekey":
 		var req struct {
 			OldMasterKey string `json:"old_master_key"`
@@ -749,6 +757,10 @@ func (h *Handler) keyViews() []map[string]any {
 		if c, ok := h.Service.State.Credential(k.CredentialID); ok {
 			view["credential_last4"] = c.Last4
 		}
+		day, month, open := h.Service.State.Spend(k.ID, h.Service.now())
+		view["spend_today_microusd"] = day
+		view["spend_month_microusd"] = month
+		view["spend_open_microusd"] = open
 		out = append(out, view)
 	}
 	return out
