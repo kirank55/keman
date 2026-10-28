@@ -3,11 +3,13 @@ package tui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	kmodel "github.com/kirank55/keman/internal/model"
 )
 
@@ -75,6 +77,7 @@ func sample(f *fakeAPI) model {
 	daily := int64(1_500_000)
 	m := newModel(context.Background(), f, "http://127.0.0.1:8081")
 	m.loading = false
+	m.loaded = [4]bool{true, true, true, true}
 	m.width = 100
 	m.height = 40
 	m.keys = []Key{{
@@ -211,7 +214,7 @@ func TestAutoDisableConfirms(t *testing.T) {
 	next, _ := m.Update(cmd())
 	m = next.(model)
 	view := m.View()
-	if !strings.Contains(view, "Would disable: yes") || !strings.Contains(view, "Detections: 3") {
+	if !strings.Contains(view, "would disable yes") || !strings.Contains(view, "detections    3") {
 		t.Fatal(view)
 	}
 	if len(f.policies) != 1 || f.policies[0] {
@@ -231,7 +234,7 @@ func TestFilter(t *testing.T) {
 	m := sample(&fakeAPI{})
 	m, _ = press(m, "/")
 	m = typeText(m, "nope")
-	if !strings.Contains(m.View(), "no keys match") {
+	if !strings.Contains(m.View(), "No keys match") {
 		t.Fatal(m.View())
 	}
 	m, _ = press(m, "esc")
@@ -297,7 +300,7 @@ func TestDetailShowsUsage(t *testing.T) {
 		}},
 	}
 	view := m.View()
-	for _, want := range []string{"127.0.0.1", "tokens in 30", "3 requests", "POST /api/v1/chat/completions", "openai/gpt-4o-mini"} {
+	for _, want := range []string{"127.0.0.1", "in 30 · out 10", "3 requests", "POST /api/v1/chat/completions", "openai/gpt-4o-mini"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("missing %q\n%s", want, view)
 		}
@@ -309,6 +312,7 @@ func TestSetupFromEmptyKeys(t *testing.T) {
 	f := &fakeAPI{}
 	m := newModel(context.Background(), f, "http://127.0.0.1:8081")
 	m.loading = false
+	m.loaded = [4]bool{true, true, true, true}
 	m.width = 120
 	m.height = 40
 	m.getenv = func(k string) string {
@@ -317,11 +321,11 @@ func TestSetupFromEmptyKeys(t *testing.T) {
 		}
 		return ""
 	}
-	if !strings.Contains(m.View(), "add upstream") {
+	if !strings.Contains(m.View(), "Press a to add an upstream") {
 		t.Fatal(m.View())
 	}
 	m, _ = press(m, "a")
-	if !strings.Contains(m.View(), "openrouter.ai") || !strings.Contains(m.View(), "OpenRouter is filled in") {
+	if !strings.Contains(m.View(), "openrouter.ai") || !strings.Contains(m.View(), "OpenRouter is only a suggestion") {
 		t.Fatal(m.View())
 	}
 	m, cmd := press(m, "enter", "enter", "enter", "enter", "enter", "enter")
@@ -500,7 +504,232 @@ func TestAdminTokenRequiredAndRetried(t *testing.T) {
 
 func TestFmtTimeUTC(t *testing.T) {
 	got := fmtTime(time.Date(2026, 10, 27, 15, 4, 0, 0, time.FixedZone("local", -7*3600)))
-	if got != "10-27 22:04" {
+	if got != "2026-10-27 22:04 UTC" {
 		t.Fatal(got)
+	}
+}
+
+// richSample fills every screen with long values, to check the layout.
+func richSample() model {
+	m := sample(&fakeAPI{})
+	when := time.Date(2026, 10, 27, 16, 58, 0, 0, time.UTC)
+	m.keys = append(m.keys, Key{
+		ID: "zzzz9999", Name: "a-very-long-virtual-key-name-for-ci", Status: kmodel.StatusActive, Kind: kmodel.KindCanary,
+	})
+	m.dets = []Detection{{Time: when, KeyID: "abcd1234", Rule: "repeated_allowlist_violations", Severity: "medium"}}
+	m.audits = []AuditRow{{Time: when, Actor: "admin-token-with-a-long-actor-name", Action: "key.create", Target: "abcd1234"}}
+	m.ups = []Upstream{{ID: "u1", Name: "openrouter", Profile: "openai", Host: "openrouter.ai", Port: 443, TLS: true}}
+	m.creds = []Credential{{ID: "c1", Name: "primary", UpstreamID: "u1", AuthStyle: "header", Last4: "abcd"}}
+	m.alerts = []AlertDest{{ID: "a1", Kind: "webhook", URL: "https://example.invalid/a/very/long/webhook/path/that/goes/on"}}
+	return m
+}
+
+func assertFits(t *testing.T, name string, m model) {
+	t.Helper()
+	view := m.View()
+	for i, line := range strings.Split(view, "\n") {
+		if w := lipgloss.Width(line); w > m.width {
+			t.Fatalf("%s at %d columns: line %d is %d wide\n%s", name, m.width, i, w, view)
+		}
+	}
+	if m.height > 0 {
+		if n := strings.Count(view, "\n"); n != m.height {
+			t.Fatalf("%s at %d columns: %d lines, want %d", name, m.width, n, m.height)
+		}
+	}
+}
+
+func TestViewsFitTheTerminal(t *testing.T) {
+	for _, width := range []int{100, 60} {
+		for _, s := range []screen{screenKeys, screenDetections, screenAudit, screenSetup} {
+			m := richSample()
+			m.width = width
+			m.screen = s
+			assertFits(t, fmt.Sprintf("screen %d", s), m)
+		}
+		m := richSample()
+		m.width = width
+		m, _ = press(m, "a")
+		assertFits(t, "upstream form", m)
+
+		m = richSample()
+		m.width = width
+		m.overlay = overlayDetail
+		m.detailID = "abcd1234"
+		m.detailLoaded = true
+		m.detailUsage = KeyUsage{Requests: 1, Recent: []UsageRequest{{
+			Operation: "POST /api/v1/a/very/long/operation/path/that/does/not/fit/in/sixty/columns", Status: 200,
+		}}}
+		assertFits(t, "detail", m)
+	}
+}
+
+func TestFirstPaintSaysLoading(t *testing.T) {
+	m := newModel(context.Background(), &fakeAPI{}, "http://127.0.0.1:8081")
+	m.width, m.height = 100, 20
+	view := m.View()
+	if !strings.Contains(view, "loading…") || strings.Contains(view, "No virtual keys yet") {
+		t.Fatal(view)
+	}
+}
+
+func TestActionErrorSurvivesPoll(t *testing.T) {
+	m := sample(&fakeAPI{})
+	next, _ := m.Update(actionDone{action: "disable", name: "laptop", err: errors.New("store_unavailable")})
+	m = next.(model)
+	next, _ = m.Update(keysLoaded{gen: m.gen, keys: m.keys})
+	m = next.(model)
+	if !strings.Contains(m.View(), "store_unavailable") {
+		t.Fatal("a successful poll cleared the action error")
+	}
+	m, _ = press(m, "j")
+	if strings.Contains(m.View(), "store_unavailable") {
+		t.Fatal("the next key should clear the error")
+	}
+}
+
+func TestPollErrorClearsWhenThePollRecovers(t *testing.T) {
+	m := sample(&fakeAPI{})
+	next, _ := m.Update(keysLoaded{gen: m.gen, err: errors.New("connection refused")})
+	m = next.(model)
+	if !strings.Contains(m.View(), "connection refused") {
+		t.Fatal(m.View())
+	}
+	next, _ = m.Update(keysLoaded{gen: m.gen, keys: m.keys})
+	m = next.(model)
+	if strings.Contains(m.View(), "connection refused") {
+		t.Fatal(m.View())
+	}
+}
+
+func TestNoteKeepsTheFooter(t *testing.T) {
+	m := sample(&fakeAPI{})
+	next, _ := m.Update(actionDone{action: "disable", name: "laptop"})
+	m = next.(model)
+	view := m.View()
+	if !strings.Contains(view, "disable laptop") || !strings.Contains(view, "q quit") {
+		t.Fatal(view)
+	}
+}
+
+func TestDetailScrollStopsAtTheEnd(t *testing.T) {
+	m := sample(&fakeAPI{})
+	m.height = 12
+	m.overlay = overlayDetail
+	m.detailID = "abcd1234"
+	m.detailLoaded = true
+	for i := 0; i < 200; i++ {
+		m, _ = press(m, "j")
+	}
+	end := m.scroll
+	if end == 0 || end != m.maxScroll(m.renderDetail()) {
+		t.Fatalf("scroll %d, max %d", end, m.maxScroll(m.renderDetail()))
+	}
+	m, _ = press(m, "k")
+	if m.scroll != end-1 {
+		t.Fatalf("one k should move up one line, got %d from %d", m.scroll, end)
+	}
+}
+
+func TestFilterIsPerView(t *testing.T) {
+	m := richSample()
+	m, _ = press(m, "/")
+	m = typeText(m, "nope")
+	m, _ = press(m, "enter")
+	if !strings.Contains(m.View(), "No keys match") {
+		t.Fatal(m.View())
+	}
+	m.screen = screenDetections
+	if !strings.Contains(m.View(), "repeated_allowlist") {
+		t.Fatal("the keys filter hid detections\n" + m.View())
+	}
+}
+
+func TestQIsTypedInTextFieldsAndQuitsElsewhere(t *testing.T) {
+	m := sample(&fakeAPI{})
+	m.keys[0].Name = "quartz"
+	m, _ = press(m, "x")
+	m, cmd := press(m, "q")
+	if m.overlay != overlayRevoke || m.revokeInput.Value() != "q" {
+		t.Fatalf("q was not typed into revoke: %q", m.revokeInput.Value())
+	}
+	if cmd != nil && isQuit(cmd) {
+		t.Fatal("q quit from the revoke field")
+	}
+	m, _ = press(m, "esc")
+	if m.overlay != overlayNone {
+		t.Fatal("esc should cancel revoke")
+	}
+	if _, cmd = press(m, "q"); cmd == nil || !isQuit(cmd) {
+		t.Fatal("q should quit from the keys view")
+	}
+}
+
+func isQuit(cmd tea.Cmd) bool {
+	_, ok := cmd().(tea.QuitMsg)
+	return ok
+}
+
+func TestCanaryStatusAndKindAreSeparate(t *testing.T) {
+	m := richSample()
+	view := m.View()
+	line := ""
+	for _, l := range strings.Split(view, "\n") {
+		if strings.Contains(l, "a-very-long") {
+			line = l
+		}
+	}
+	if !strings.Contains(line, "active") || !strings.Contains(line, "canary") {
+		t.Fatalf("canary row %q", line)
+	}
+	if !strings.Contains(line, "…") {
+		t.Fatalf("long name should be cut with an ellipsis: %q", line)
+	}
+}
+
+func TestEnterOnDetectionOpensItsKey(t *testing.T) {
+	m := richSample()
+	m.screen = screenDetections
+	m, _ = press(m, "enter")
+	if m.overlay != overlayDetail || m.detailID != "abcd1234" {
+		t.Fatalf("overlay %d detail %q", m.overlay, m.detailID)
+	}
+	m, _ = press(m, "esc")
+	if m.screen != screenDetections || m.overlay != overlayNone {
+		t.Fatal("esc should return to detections")
+	}
+}
+
+func TestProfileSwapsUntouchedPreset(t *testing.T) {
+	m := sample(&fakeAPI{})
+	m, _ = press(m, "a", "down", "right")
+	if m.upHost.Value() != "api.anthropic.com" {
+		t.Fatalf("host %q", m.upHost.Value())
+	}
+	m, _ = press(m, "down")
+	m = typeText(m, "x")
+	m, _ = press(m, "up", "right")
+	if m.upHost.Value() != "api.anthropic.comx" {
+		t.Fatalf("an edited host was replaced: %q", m.upHost.Value())
+	}
+}
+
+func TestLastFieldFooterSaysSave(t *testing.T) {
+	m := sample(&fakeAPI{})
+	m, _ = press(m, "p")
+	if !strings.Contains(m.View(), "enter next") {
+		t.Fatal(m.View())
+	}
+	m, _ = press(m, "up")
+	if !strings.Contains(m.View(), "enter save") {
+		t.Fatal(m.View())
+	}
+}
+
+func TestUSDHasCents(t *testing.T) {
+	for micro, want := range map[int64]string{0: "$0.00", 1_500_000: "$1.50", 420_000: "$0.42", 1_500: "$0.0015", 20_000_000: "$20.00"} {
+		if got := usd(micro); got != want {
+			t.Errorf("usd(%d) = %q, want %q", micro, got, want)
+		}
 	}
 }

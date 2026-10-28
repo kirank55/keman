@@ -12,58 +12,61 @@ import (
 )
 
 var (
-	dimStyle  = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "242", Dark: "245"})
-	okStyle   = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "28", Dark: "42"})
-	warnStyle = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "172", Dark: "214"})
-	badStyle  = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "160", Dark: "203"})
-	selStyle  = lipgloss.NewStyle().
-			Foreground(lipgloss.AdaptiveColor{Light: "231", Dark: "231"}).
-			Background(lipgloss.AdaptiveColor{Light: "33", Dark: "33"})
-	tabStyle  = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "27", Dark: "75"}).Underline(true)
-	errStyle  = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "160", Dark: "203"})
-	noteStyle = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "28", Dark: "42"})
+	accent      = lipgloss.AdaptiveColor{Light: "27", Dark: "75"}
+	selBg       = lipgloss.AdaptiveColor{Light: "254", Dark: "237"}
+	dimStyle    = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "242", Dark: "245"})
+	okStyle     = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "28", Dark: "42"})
+	warnStyle   = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "172", Dark: "214"})
+	badStyle    = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "160", Dark: "203"})
+	canaryStyle = lipgloss.NewStyle().Foreground(lipgloss.AdaptiveColor{Light: "127", Dark: "177"})
+	plainStyle  = lipgloss.NewStyle()
+	tabStyle    = lipgloss.NewStyle().Foreground(accent).Bold(true).Underline(true)
+	titleStyle  = lipgloss.NewStyle().Bold(true)
+	markStyle   = lipgloss.NewStyle().Foreground(accent).Bold(true)
+	errStyle    = badStyle
+	noteStyle   = okStyle
 )
+
+// timeLayout is the one timestamp format on every screen.
+const timeLayout = "2006-01-02 15:04 UTC"
 
 const helpText = `keman
 
-1 keys    2 detections    3 audit    4 setup
-tab switches view
+views     1 keys · 2 detections · 3 audit · 4 setup · tab next
+lists     j/k or arrows move · enter open · / filter this view
+keys      d disable · e enable · x revoke (type the name) · p policy
+setup     a add upstream · c add credential · n new virtual key
+forms     tab or arrows change field · left/right change a choice
+          enter next field, then save · esc cancel
+quit      q, except while typing in a field · ctrl+c always
 
-j k or arrows move
-enter opens a key
-d disable    e enable
-x revoke     type the key name
-p policy     dollars, not microdollars
-a add upstream    OpenRouter is filled in
-c add credential  type the secret, or read an environment variable
-n new key         the virtual key is shown once
-/ filter
-? help       q quit
-
+Money is in dollars. Times are UTC.
 Type the admin token when asked, unless KEMAN_ADMIN_TOKEN is set.
-On the credential form, type the provider API key or name an environment variable.
-Rekey and admin-token rotate stay on the CLI.
+Rotate, rekey, admin-token rotate, and alerts stay on the CLI.
 `
 
 func (m model) View() string {
 	body := m.renderBody()
-	if m.overlay == overlayDetail {
+	if m.overlay == overlayDetail || (m.overlay == overlayNone && m.screen == screenSetup) {
 		body = scrollText(body, m.scroll)
 	}
+	budget := m.bodyBudget()
 	if m.overlay != overlayToken {
-		body = clip(body, m.bodyBudget())
+		body = cutLines(clip(body, budget), m.totalWidth())
 	}
+	body = strings.TrimSuffix(body, "\n")
 	var b strings.Builder
 	b.WriteString(m.header())
 	b.WriteString("\n")
 	b.WriteString(body)
-	if !strings.HasSuffix(body, "\n") {
-		b.WriteString("\n")
+	b.WriteString("\n")
+	if budget > 0 {
+		for n := lineCount(body); n < budget; n++ {
+			b.WriteString("\n")
+		}
 	}
-	if m.errMsg != "" {
-		b.WriteString(errStyle.Render(fit(m.errMsg, m.lineWidth())))
-		b.WriteString("\n")
-	}
+	b.WriteString(m.statusLine())
+	b.WriteString("\n")
 	b.WriteString(m.footer())
 	b.WriteString("\n")
 	return b.String()
@@ -109,15 +112,15 @@ func (m model) header() string {
 	if host == "" {
 		host = "admin API"
 	}
-	left := dimStyle.Render("keman · " + host)
+	left := titleStyle.Render("keman") + dimStyle.Render(" · "+host)
 	labels := []struct {
 		name string
 		s    screen
 	}{
-		{"keys", screenKeys},
-		{"detections", screenDetections},
-		{"audit", screenAudit},
-		{"setup", screenSetup},
+		{"1 keys", screenKeys},
+		{"2 detections", screenDetections},
+		{"3 audit", screenAudit},
+		{"4 setup", screenSetup},
 	}
 	parts := make([]string, len(labels))
 	for i, label := range labels {
@@ -129,45 +132,169 @@ func (m model) header() string {
 	}
 	right := strings.Join(parts, "  ")
 	gap := m.width - lipgloss.Width(left) - lipgloss.Width(right)
-	if m.width == 0 || gap < 2 {
+	if m.width == 0 {
 		return left + "  " + right
+	}
+	if gap < 2 {
+		// Too narrow for both: keep the tabs, they carry the shortcuts.
+		return fit(right, m.width)
 	}
 	return left + strings.Repeat(" ", gap) + right
 }
 
-func (m model) footer() string {
-	if m.filtering {
-		return dimStyle.Render("filter · enter keeps it · esc clears")
+// statusLine is the one place for loading, error, and success feedback.
+// It is always one line, so the footer never moves.
+func (m model) statusLine() string {
+	w := m.totalWidth()
+	switch {
+	case m.errMsg != "":
+		return errStyle.Render(fit("! "+m.errMsg, w))
+	case m.note != "":
+		return noteStyle.Render(fit("✓ "+m.note, w))
+	case m.loading && !m.hasData():
+		return dimStyle.Render("loading…")
 	}
-	if m.note != "" && m.errMsg == "" {
-		return noteStyle.Render(m.note)
+	return ""
+}
+
+func (m model) footer() string {
+	return dimStyle.Render(fit(m.footerText(), m.totalWidth()))
+}
+
+func (m model) footerText() string {
+	if m.filtering {
+		return "type to filter · enter keep · esc clear"
+	}
+	save := "enter next"
+	if m.onLastField() {
+		save = "enter save"
 	}
 	switch m.overlay {
 	case overlayToken:
-		return dimStyle.Render("enter clears the key from this screen")
+		return "enter clear it from the screen · q quit"
 	case overlayRevoke:
-		return dimStyle.Render("enter revoke · esc cancel")
+		return "enter revoke · esc cancel"
 	case overlayConfirm:
-		return dimStyle.Render("enter confirm auto_disable · esc back")
-	case overlayPolicy:
-		return dimStyle.Render("left/right mode · enter next · esc cancel")
-	case overlayCreate, overlayUpstream, overlayCredential:
-		return dimStyle.Render("enter next · left/right choice · esc cancel")
+		return "enter switch to auto_disable · esc back to the form"
+	case overlayPolicy, overlayCreate, overlayUpstream, overlayCredential:
+		return "tab/↑↓ field · ←/→ choice · " + save + " · esc cancel"
 	case overlayAdmin:
-		return dimStyle.Render("enter continues · esc quits")
+		return "enter continue · esc quit"
 	case overlayHelp:
-		return dimStyle.Render("esc back")
+		return "esc back · q quit"
 	case overlayDetail:
-		return dimStyle.Render("d disable · e enable · x revoke · p policy · j/k scroll · esc back")
+		return "d disable · e enable · x revoke · p policy · j/k scroll · esc back · q quit"
 	}
 	switch m.screen {
-	case screenDetections, screenAudit:
-		return dimStyle.Render("a upstream · c credential · j/k move · / filter · 1-4 views · q quit")
+	case screenDetections:
+		return "j/k move · enter open key · / filter · 1-4 views · ? help · q quit"
+	case screenAudit:
+		return "j/k move · enter open key · / filter · 1-4 views · ? help · q quit"
 	case screenSetup:
-		return dimStyle.Render("a upstream · c credential · j/k scroll · 1-4 views · q quit")
+		return "a upstream · c credential · n new key · j/k scroll · 1-4 views · ? help · q quit"
 	default:
-		return dimStyle.Render("a upstream · c credential · n new · d disable · e enable · x revoke · p policy · q quit")
+		return "enter open · n new · d disable · e enable · x revoke · p policy · / filter · ? help · q quit"
 	}
+}
+
+// column is one table column. A flex column takes the remaining width.
+type column struct {
+	title string
+	width int
+	flex  bool
+}
+
+// cell is one table value. A nil style renders plain text.
+type cell struct {
+	text  string
+	style *lipgloss.Style
+}
+
+func txt(s string) cell { return cell{text: s} }
+
+func styled(s string, st lipgloss.Style) cell { return cell{text: s, style: &st} }
+
+// table renders the shared list layout: a dim header, padded columns cut
+// with an ellipsis, and a full-width selection. Columns that do not fit are
+// dropped from the right instead of wrapping. cursor < 0 means no selection.
+func (m model) table(cols []column, rows [][]cell, cursor, start, end int) string {
+	w := m.totalWidth()
+	widths := make([]int, 0, len(cols))
+	used := 2
+	for i, c := range cols {
+		need := c.width
+		if i > 0 {
+			need += 2
+		}
+		if i > 0 && used+need > w {
+			break
+		}
+		widths = append(widths, c.width)
+		used += need
+	}
+	if len(widths) == 0 {
+		return ""
+	}
+	last := len(widths) - 1
+	if used > w {
+		widths[last] -= used - w
+		if widths[last] < 1 {
+			widths[last] = 1
+		}
+	} else if cols[last].flex {
+		widths[last] += w - used
+	}
+	var b strings.Builder
+	head := make([]string, len(widths))
+	for i := range widths {
+		head[i] = fit(cols[i].title, widths[i])
+	}
+	b.WriteString(dimStyle.Render("  " + strings.Join(head, "  ")))
+	b.WriteString("\n")
+	for r := start; r < end; r++ {
+		b.WriteString(m.tableRow(rows[r], widths, r == cursor, w))
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+func (m model) tableRow(row []cell, widths []int, selected bool, w int) string {
+	paint := func(st lipgloss.Style, s string) string {
+		if selected {
+			st = st.Background(selBg)
+		}
+		return st.Render(s)
+	}
+	var b strings.Builder
+	if selected {
+		b.WriteString(paint(markStyle, "› "))
+	} else {
+		b.WriteString("  ")
+	}
+	used := 2
+	for i, width := range widths {
+		if i > 0 {
+			b.WriteString(paint(plainStyle, "  "))
+			used += 2
+		}
+		c := cell{}
+		if i < len(row) {
+			c = row[i]
+		}
+		st := plainStyle
+		if c.style != nil {
+			st = *c.style
+		}
+		if selected {
+			st = st.Bold(true)
+		}
+		b.WriteString(paint(st, fit(c.text, width)))
+		used += width
+	}
+	if selected && used < w {
+		b.WriteString(paint(plainStyle, strings.Repeat(" ", w-used)))
+	}
+	return b.String()
 }
 
 func (m model) renderKeys() string {
@@ -175,59 +302,52 @@ func (m model) renderKeys() string {
 	var b strings.Builder
 	b.WriteString(m.filterBanner())
 	if len(rows) == 0 {
-		if len(m.keys) == 0 {
-			b.WriteString("no keys yet\n\n")
-			b.WriteString("a  add upstream\n")
-			b.WriteString("c  add credential\n")
-			b.WriteString("n  new virtual key\n")
-		} else {
-			b.WriteString("no keys match\n")
+		switch {
+		case len(m.keys) > 0:
+			b.WriteString("No keys match the filter.\n")
+		case !m.loaded[screenKeys]:
+		case len(m.ups) == 0:
+			b.WriteString("No virtual keys yet.\n\n")
+			b.WriteString("Press a to add an upstream. The credential and key forms follow.\n")
+		case len(m.creds) == 0:
+			b.WriteString("No virtual keys yet.\n\n")
+			b.WriteString("Press c to add a credential, then n to create a key.\n")
+		default:
+			b.WriteString("No virtual keys yet.\n\n")
+			b.WriteString("Press n to create a key.\n")
 		}
 		return b.String()
 	}
-	b.WriteString(dimStyle.Render(m.keyHead()))
-	b.WriteString("\n")
-	start, end := m.span(len(rows))
-	for i := start; i < end; i++ {
-		b.WriteString(m.keyLine(rows[i], i == m.cursor))
-		b.WriteString("\n")
+	cols := []column{
+		{title: "name", width: 16},
+		{title: "status", width: 9},
+		{title: "today", width: 18},
+		{title: "kind", width: 8},
+		{title: "daily cap", width: 10},
+		{title: "mode", width: 12, flex: true},
 	}
-	return b.String()
-}
-
-func (m model) keyHead() string {
-	if m.wide() {
-		return "  " + fit("name", 16) + "  " + fit("status", 10) + "  " + fit("today", 18) + "  " + fit("cap", 10) + "  " + fit("mode", 14)
-	}
-	return "  " + fit("name", 16) + "  " + fit("status", 10) + "  " + fit("today", 18)
-}
-
-func (m model) keyLine(k Key, selected bool) string {
-	label := statusLabel(k)
-	today := "$" + money.FormatUSD(k.SpendToday)
-	if k.SpendOpen > 0 {
-		today += " (+$" + money.FormatUSD(k.SpendOpen) + ")"
-	}
-	cap := "—"
-	mode := "—"
-	if k.Kind != kmodel.KindCanary && k.Policy != nil {
-		if k.Policy.Mode != "" {
+	cells := make([][]cell, len(rows))
+	for i, k := range rows {
+		cap, mode := "—", "—"
+		if k.Kind != kmodel.KindCanary && k.Policy != nil {
 			mode = k.Policy.Mode
+			if mode == "" {
+				mode = kmodel.ModeAlertOnly
+			}
+			cap = capLine(k.Policy.DailyCapMicro)
 		}
-		cap = capLine(k.Policy.DailyCapMicro)
-	}
-	name := fit(displayName(k), 16)
-	if selected {
-		if m.wide() {
-			return selStyle.Render("> " + name + "  " + fit(label, 10) + "  " + fit(today, 18) + "  " + fit(cap, 10) + "  " + fit(mode, 14))
+		cells[i] = []cell{
+			txt(displayName(k)),
+			styled(statusLabel(k), statusStyle(k)),
+			txt(todayLine(k)),
+			styled(kindLabel(k), kindStyle(k)),
+			txt(cap),
+			txt(mode),
 		}
-		return selStyle.Render("> " + name + "  " + fit(label, 10) + "  " + fit(today, 18))
 	}
-	status := statusStyle(k).Render(fit(label, 10))
-	if m.wide() {
-		return "  " + name + "  " + status + "  " + fit(today, 18) + "  " + fit(cap, 10) + "  " + fit(mode, 14)
-	}
-	return "  " + name + "  " + status + "  " + fit(today, 18)
+	start, end := m.span(len(rows))
+	b.WriteString(m.table(cols, cells, m.cursor, start, end))
+	return b.String()
 }
 
 func (m model) renderDetections() string {
@@ -235,23 +355,32 @@ func (m model) renderDetections() string {
 	var b strings.Builder
 	b.WriteString(m.filterBanner())
 	if len(rows) == 0 {
-		b.WriteString("no detections\n")
+		switch {
+		case len(m.dets) > 0:
+			b.WriteString("No detections match the filter.\n")
+		case !m.loaded[screenDetections]:
+		default:
+			b.WriteString("No detections. Rules fire on abuse, not on normal traffic.\n")
+		}
 		return b.String()
 	}
-	b.WriteString(dimStyle.Render("  " + fit("time", 12) + "  " + fit("severity", 10) + "  " + fit("rule", 22) + "  key"))
-	b.WriteString("\n")
-	start, end := m.span(len(rows))
-	for i := start; i < end; i++ {
-		d := rows[i]
-		line := fit(fmtTime(d.Time), 12) + "  " + fit(d.Severity, 10) + "  " + fit(d.Rule, 22) + "  " + d.KeyID
-		if i == m.cursor {
-			line = selStyle.Render("> " + line)
-		} else {
-			line = "  " + line
-		}
-		b.WriteString(line)
-		b.WriteString("\n")
+	cols := []column{
+		{title: "time", width: len(timeLayout)},
+		{title: "severity", width: 8},
+		{title: "key", width: 14},
+		{title: "rule", width: 10, flex: true},
 	}
+	cells := make([][]cell, len(rows))
+	for i, d := range rows {
+		cells[i] = []cell{
+			txt(fmtTime(d.Time)),
+			styled(d.Severity, severityStyle(d.Severity)),
+			txt(m.keyLabel(d.KeyID)),
+			txt(d.Rule),
+		}
+	}
+	start, end := m.span(len(rows))
+	b.WriteString(m.table(cols, cells, m.cursor, start, end))
 	return b.String()
 }
 
@@ -260,85 +389,107 @@ func (m model) renderAudit() string {
 	var b strings.Builder
 	b.WriteString(m.filterBanner())
 	if len(rows) == 0 {
-		b.WriteString("no audit entries\n")
+		switch {
+		case len(m.audits) > 0:
+			b.WriteString("No audit entries match the filter.\n")
+		case !m.loaded[screenAudit]:
+		default:
+			b.WriteString("No audit entries yet.\n")
+		}
 		return b.String()
 	}
-	b.WriteString(dimStyle.Render("  " + fit("time", 12) + "  " + fit("action", 18) + "  " + fit("target", 14) + "  actor"))
-	b.WriteString("\n")
-	start, end := m.span(len(rows))
-	for i := start; i < end; i++ {
-		a := rows[i]
-		line := fit(fmtTime(a.Time), 12) + "  " + fit(a.Action, 18) + "  " + fit(a.Target, 14) + "  " + a.Actor
-		if i == m.cursor {
-			line = selStyle.Render("> " + line)
-		} else {
-			line = "  " + line
-		}
-		b.WriteString(line)
-		b.WriteString("\n")
+	cols := []column{
+		{title: "time", width: len(timeLayout)},
+		{title: "action", width: 18},
+		{title: "target", width: 16},
+		{title: "actor", width: 10, flex: true},
 	}
+	cells := make([][]cell, len(rows))
+	for i, a := range rows {
+		cells[i] = []cell{
+			txt(fmtTime(a.Time)),
+			txt(a.Action),
+			txt(m.keyLabel(a.Target)),
+			txt(a.Actor),
+		}
+	}
+	start, end := m.span(len(rows))
+	b.WriteString(m.table(cols, cells, m.cursor, start, end))
 	return b.String()
 }
 
 func (m model) renderSetup() string {
+	if !m.loaded[screenSetup] {
+		return ""
+	}
 	var b strings.Builder
-	b.WriteString("upstreams\n")
+	b.WriteString(titleStyle.Render("upstreams"))
+	b.WriteString("\n")
 	if len(m.ups) == 0 {
-		b.WriteString("  no upstreams\n")
-	}
-	for _, u := range m.ups {
-		tls := "plain"
-		if u.TLS {
-			tls = "tls"
+		b.WriteString("  none · press a to add one\n")
+	} else {
+		cells := make([][]cell, len(m.ups))
+		for i, u := range m.ups {
+			tls := "off"
+			if u.TLS {
+				tls = "on"
+			}
+			cells[i] = []cell{txt(u.Name), txt(u.Profile), txt(u.Host + ":" + strconv.Itoa(u.Port)), txt(tls)}
 		}
-		fmt.Fprintf(&b, "  %s  %s  %s:%d  %s\n", u.Name, u.Profile, u.Host, u.Port, tls)
+		b.WriteString(m.table([]column{
+			{title: "name", width: 16}, {title: "profile", width: 9}, {title: "address", width: 28, flex: true}, {title: "tls", width: 3},
+		}, cells, -1, 0, len(cells)))
 	}
-	b.WriteString("\ncredentials\n")
+	b.WriteString("\n")
+	b.WriteString(titleStyle.Render("credentials"))
+	b.WriteString("\n")
 	if len(m.creds) == 0 {
-		b.WriteString("  no credentials\n")
-	}
-	for _, c := range m.creds {
-		last := c.Last4
-		if last == "" {
-			last = "—"
+		b.WriteString("  none · press c to add one\n")
+	} else {
+		cells := make([][]cell, len(m.creds))
+		for i, c := range m.creds {
+			last := c.Last4
+			if last == "" {
+				last = "—"
+			}
+			cells[i] = []cell{txt(c.Name), txt(m.upstreamName(c.UpstreamID)), txt(c.AuthStyle), txt("…" + last)}
 		}
-		fmt.Fprintf(&b, "  %s  %s  last4 %s\n", c.Name, c.AuthStyle, last)
+		b.WriteString(m.table([]column{
+			{title: "name", width: 16}, {title: "upstream", width: 16}, {title: "auth", width: 8}, {title: "key", width: 8, flex: true},
+		}, cells, -1, 0, len(cells)))
 	}
-	b.WriteString("\nalert destinations\n")
+	b.WriteString("\n")
+	b.WriteString(titleStyle.Render("alert destinations"))
+	b.WriteString(dimStyle.Render("  (managed with keman alert)"))
+	b.WriteString("\n")
 	if len(m.alerts) == 0 {
-		b.WriteString("  no destinations\n")
-	}
-	for _, a := range m.alerts {
-		fmt.Fprintf(&b, "  %s  %s  %s\n", a.Kind, a.ID, a.URL)
+		b.WriteString("  none\n")
+	} else {
+		cells := make([][]cell, len(m.alerts))
+		for i, a := range m.alerts {
+			cells[i] = []cell{txt(a.Kind), txt(a.ID), txt(a.URL)}
+		}
+		b.WriteString(m.table([]column{
+			{title: "kind", width: 8}, {title: "id", width: 10}, {title: "url", width: 20, flex: true},
+		}, cells, -1, 0, len(cells)))
 	}
 	b.WriteString("\n")
-	b.WriteString(dimStyle.Render("a add upstream · c add credential"))
+	b.WriteString(dimStyle.Render(fit("Rotate, rekey, admin-token rotate, and alerts stay on the CLI.", m.totalWidth())))
 	b.WriteString("\n")
-	b.WriteString(dimStyle.Render("rotate, rekey, and alerts stay on the CLI"))
-	b.WriteString("\n")
-	text := b.String()
-	lines := strings.Split(text, "\n")
-	scroll := m.scroll
-	if scroll >= len(lines) {
-		scroll = len(lines) - 1
-	}
-	if scroll < 0 {
-		scroll = 0
-	}
-	if scroll > 0 {
-		lines = lines[scroll:]
-	}
-	return strings.Join(lines, "\n")
+	return b.String()
 }
 
 func (m model) renderDetail() string {
 	k, ok := m.keyByID(m.detailID)
 	if !ok {
-		return "that key is no longer listed\n"
+		return "That key is no longer listed.\n"
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s   %s   %s   %s\n", displayName(k), k.ID, statusLabel(k), k.Kind)
-	fmt.Fprintf(&b, "today %s   month $%s\n", todayLine(k), money.FormatUSD(k.SpendMonth))
+	b.WriteString(titleStyle.Render(displayName(k)))
+	b.WriteString("  " + dimStyle.Render(k.ID) + "  " + statusStyle(k).Render(statusLabel(k)) + "  " + kindStyle(k).Render(kindLabel(k)))
+	b.WriteString("\n")
+	b.WriteString(kv("today", todayLine(k)))
+	b.WriteString(kv("this month", usd(k.SpendMonth)))
 	if k.Policy != nil {
 		mode := k.Policy.Mode
 		if mode == "" {
@@ -346,28 +497,38 @@ func (m model) renderDetail() string {
 		}
 		rpm := "unlimited"
 		if k.Policy.RPM != nil {
-			rpm = strconv.Itoa(*k.Policy.RPM)
+			rpm = strconv.Itoa(*k.Policy.RPM) + " per minute"
 		}
-		fmt.Fprintf(&b, "%s   rpm %s   daily %s   monthly %s\n", mode, rpm, capLine(k.Policy.DailyCapMicro), capLine(k.Policy.MonthlyCapMicro))
+		b.WriteString(kv("mode", mode))
+		b.WriteString(kv("rate", rpm))
+		b.WriteString(kv("daily cap", capLine(k.Policy.DailyCapMicro)))
+		b.WriteString(kv("monthly cap", capLine(k.Policy.MonthlyCapMicro)))
 		if len(k.Policy.Models) > 0 {
-			fmt.Fprintf(&b, "models %s\n", strings.Join(k.Policy.Models, ", "))
+			b.WriteString(kv("models", strings.Join(k.Policy.Models, ", ")))
 		}
 		if len(k.Policy.Paths) > 0 {
-			fmt.Fprintf(&b, "paths %s\n", strings.Join(k.Policy.Paths, ", "))
+			b.WriteString(kv("paths", strings.Join(k.Policy.Paths, ", ")))
 		}
 	}
-	b.WriteString("\nusage\n")
+	if k.ExpiresAt != nil {
+		b.WriteString(kv("expires", fmtTime(*k.ExpiresAt)))
+	}
+	b.WriteString("\n")
+	b.WriteString(titleStyle.Render("usage"))
+	b.WriteString("\n")
 	if !m.detailLoaded {
-		b.WriteString("loading usage…\n")
+		b.WriteString("loading…\n")
 	} else {
 		b.WriteString(renderUsage(m.detailUsage))
 	}
-	b.WriteString("\ndetections\n")
+	b.WriteString("\n")
+	b.WriteString(titleStyle.Render("detections"))
+	b.WriteString("\n")
 	if len(m.detailDets) == 0 {
 		b.WriteString("none\n")
 	}
 	for _, d := range m.detailDets {
-		fmt.Fprintf(&b, "%s  %s  %s\n", fmtTime(d.Time), d.Severity, d.Rule)
+		b.WriteString(fmtTime(d.Time) + "  " + severityStyle(d.Severity).Render(fit(d.Severity, 8)) + "  " + d.Rule + "\n")
 	}
 	return b.String()
 }
@@ -378,36 +539,35 @@ func renderUsage(u KeyUsage) string {
 		b.WriteString("no requests yet\n")
 		return b.String()
 	}
-	fmt.Fprintf(&b, "%d requests", u.Requests)
+	b.WriteString(kv("requests", strconv.Itoa(u.Requests)))
 	if !u.LastSeen.IsZero() {
-		fmt.Fprintf(&b, "   last %s", fmtTime(u.LastSeen))
+		b.WriteString(kv("last seen", fmtTime(u.LastSeen)))
 	}
-	b.WriteString("\n")
-	fmt.Fprintf(&b, "tokens in %d  out %d", u.TokensIn, u.TokensOut)
+	tokens := fmt.Sprintf("in %d · out %d", u.TokensIn, u.TokensOut)
 	if u.Cached > 0 {
-		fmt.Fprintf(&b, "  cached %d", u.Cached)
+		tokens += fmt.Sprintf(" · cached %d", u.Cached)
 	}
 	if u.CacheWrite > 0 {
-		fmt.Fprintf(&b, "  cache write %d", u.CacheWrite)
+		tokens += fmt.Sprintf(" · cache write %d", u.CacheWrite)
 	}
-	b.WriteString("\n")
-	if u.Priced == 0 {
-		b.WriteString("cost —\n")
-	} else {
-		fmt.Fprintf(&b, "cost $%s", money.FormatUSD(u.CostMicro))
+	b.WriteString(kv("tokens", tokens))
+	cost := "— (model not in the price table)"
+	if u.Priced > 0 {
+		cost = usd(u.CostMicro)
 		if u.Estimated > 0 {
-			b.WriteString("  estimated")
+			cost += " (some estimated)"
 		}
-		b.WriteString("\n")
 	}
-	b.WriteString("\nclients\n")
+	b.WriteString(kv("cost", cost))
+
+	b.WriteString("\n" + dimStyle.Render("clients") + "\n")
 	if len(u.Clients) == 0 {
 		b.WriteString("none\n")
 	}
 	for _, c := range u.Clients {
-		fmt.Fprintf(&b, "%s   %d requests   last %s\n", clientWhere(c), c.Requests, fmtTime(c.LastSeen))
+		fmt.Fprintf(&b, "%s  %d requests  last %s\n", clientWhere(c), c.Requests, fmtTime(c.LastSeen))
 	}
-	b.WriteString("\nmodels\n")
+	b.WriteString("\n" + dimStyle.Render("models") + "\n")
 	if len(u.Models) == 0 {
 		b.WriteString("none\n")
 	}
@@ -418,11 +578,11 @@ func renderUsage(u KeyUsage) string {
 		}
 		cost := "—"
 		if item.Priced > 0 {
-			cost = "$" + money.FormatUSD(item.CostMicro)
+			cost = usd(item.CostMicro)
 		}
-		fmt.Fprintf(&b, "%s   %d requests   in %d out %d  %s\n", name, item.Requests, item.TokensIn, item.TokensOut, cost)
+		fmt.Fprintf(&b, "%s  %d requests  in %d · out %d  %s\n", name, item.Requests, item.TokensIn, item.TokensOut, cost)
 	}
-	b.WriteString("\nrecent requests\n")
+	b.WriteString("\n" + dimStyle.Render("recent requests") + "\n")
 	if len(u.Recent) == 0 {
 		b.WriteString("none\n")
 	}
@@ -439,12 +599,12 @@ func renderUsage(u KeyUsage) string {
 		b.WriteString("\n")
 		cost := "—"
 		if r.CostMicro != nil {
-			cost = "$" + money.FormatUSD(*r.CostMicro)
+			cost = usd(*r.CostMicro)
 			if r.CostEstimated {
 				cost += " estimated"
 			}
 		}
-		fmt.Fprintf(&b, "  %s   in %d out %d  %s\n", r.Operation, r.TokensIn, r.TokensOut, cost)
+		fmt.Fprintf(&b, "  %s  in %d · out %d  %s\n", r.Operation, r.TokensIn, r.TokensOut, cost)
 	}
 	return b.String()
 }
@@ -460,19 +620,64 @@ func clientWhere(c UsageClient) string {
 	return s
 }
 
-func (m model) renderPolicy() string {
+// form renders the shared form layout: a title, one row per field, and a
+// hint for the focused field.
+func (m model) form(title string, rows []string, hint string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "policy  %s\n\n", m.policyName)
-	b.WriteString(fieldLine(m.polField == 0, "mode", policyModes[m.polMode]))
-	b.WriteString(fieldLine(m.polField == 1, "rpm", m.rpmInput.View()))
-	b.WriteString(fieldLine(m.polField == 2, "daily $", m.dailyInput.View()))
-	b.WriteString(fieldLine(m.polField == 3, "month $", m.monthlyInput.View()))
-	b.WriteString("\nAllowlists already on this key are kept.\n")
+	b.WriteString(titleStyle.Render(title))
+	b.WriteString("\n\n")
+	for _, r := range rows {
+		b.WriteString(r)
+	}
+	if hint != "" {
+		b.WriteString("\n")
+		b.WriteString(dimStyle.Render(hint))
+		b.WriteString("\n")
+	}
 	return b.String()
 }
 
+// fieldLine is one form row. A focused choice shows its arrows.
+func fieldLine(on bool, label, value string, choice bool) string {
+	mark := "  "
+	l := fit(label, 12)
+	if on {
+		mark = markStyle.Render("› ")
+		l = titleStyle.Render(l)
+		if choice {
+			value = "‹ " + value + " ›"
+		}
+	}
+	return mark + l + value + "\n"
+}
+
+var policyHints = []string{
+	"alert_only alerts · dry_run records what auto_disable would do · auto_disable turns the key off",
+	"Requests per minute. Leave empty for no limit.",
+	"Dollars per UTC day, such as 1.50. Leave empty for no cap.",
+	"Dollars per UTC month, such as 20. Leave empty for no cap.",
+}
+
+func (m model) renderPolicy() string {
+	return m.form("policy · "+m.policyName, []string{
+		fieldLine(m.polField == 0, "mode", policyModes[m.polMode], true),
+		fieldLine(m.polField == 1, "rpm", m.rpmInput.View(), false),
+		fieldLine(m.polField == 2, "daily $", m.dailyInput.View(), false),
+		fieldLine(m.polField == 3, "monthly $", m.monthlyInput.View(), false),
+	}, policyHints[m.polField]+"\nPath, model, and network allowlists on this key are kept.")
+}
+
+var upstreamHints = []string{
+	"A label for this upstream.",
+	"openai and anthropic track tokens and spend. generic needs a path list.",
+	"Host name only, without https://.",
+	"Usually 443.",
+	"TLS to the upstream. Leave on for public APIs.",
+	"Comma separated, such as POST /v1/chat/completions. * is one segment, ** the rest. Empty uses the profile's built-in list.",
+}
+
 func (m model) renderUpstream() string {
-	profile := "openai"
+	profile := upstreamProfiles[0]
 	if m.upProfile >= 0 && m.upProfile < len(upstreamProfiles) {
 		profile = upstreamProfiles[m.upProfile]
 	}
@@ -480,18 +685,18 @@ func (m model) renderUpstream() string {
 	if m.upTLS {
 		tls = "on"
 	}
-	var b strings.Builder
-	b.WriteString("add upstream\n\n")
-	b.WriteString(fieldLine(m.upField == 0, "name", m.upName.View()))
-	b.WriteString(fieldLine(m.upField == 1, "profile", profile))
-	b.WriteString(fieldLine(m.upField == 2, "host", m.upHost.View()))
-	b.WriteString(fieldLine(m.upField == 3, "port", m.upPort.View()))
-	b.WriteString(fieldLine(m.upField == 4, "tls", tls))
-	b.WriteString(fieldLine(m.upField == 5, "paths", m.upPaths.View()))
-	b.WriteString("\n")
-	b.WriteString(dimStyle.Render("OpenRouter is filled in. Change the host and paths for another provider."))
-	b.WriteString("\n")
-	return b.String()
+	hint := upstreamHints[m.upField]
+	if m.upField == 0 || m.upField == 2 {
+		hint += " OpenRouter is only a suggestion; every field is editable."
+	}
+	return m.form("add upstream", []string{
+		fieldLine(m.upField == 0, "name", m.upName.View(), false),
+		fieldLine(m.upField == 1, "profile", profile, true),
+		fieldLine(m.upField == 2, "host", m.upHost.View(), false),
+		fieldLine(m.upField == 3, "port", m.upPort.View(), false),
+		fieldLine(m.upField == 4, "tls", tls, true),
+		fieldLine(m.upField == 5, "paths", m.upPaths.View(), false),
+	}, hint)
 }
 
 func (m model) renderCredential() string {
@@ -510,32 +715,36 @@ func (m model) renderCredential() string {
 		valueLabel = "variable"
 		value = m.credEnv.View()
 	}
-	var b strings.Builder
-	b.WriteString("add credential\n\n")
-	b.WriteString(fieldLine(m.credField == 0, "name", m.credName.View()))
-	b.WriteString(fieldLine(m.credField == 1, "upstream", upName))
-	b.WriteString(fieldLine(m.credField == 2, "from", from))
-	b.WriteString(fieldLine(m.credField == 3, valueLabel, value))
-	b.WriteString("\n")
-	b.WriteString(dimStyle.Render("Type the provider API key. It is masked and not shown again."))
-	b.WriteString("\n")
-	return b.String()
+	var hint string
+	switch m.credField {
+	case 0:
+		hint = "A label for this real key, such as primary."
+	case 1:
+		hint = "The upstream this key belongs to."
+	case 2:
+		hint = "environment reads a variable from this shell. type it takes the key in a masked field."
+	default:
+		if m.credMode == 0 {
+			hint = "The name of an environment variable set in the shell that started keman."
+		} else {
+			hint = "The provider API key. It is masked, stored encrypted, and not shown again."
+		}
+	}
+	return m.form("add credential", []string{
+		fieldLine(m.credField == 0, "name", m.credName.View(), false),
+		fieldLine(m.credField == 1, "upstream", upName, true),
+		fieldLine(m.credField == 2, "from", from, true),
+		fieldLine(m.credField == 3, valueLabel, value, false),
+	}, hint)
 }
 
 func (m model) renderAdmin() string {
-	var b strings.Builder
-	b.WriteString("admin token\n\n")
-	b.WriteString(m.adminInput.View())
-	b.WriteString("\n\n")
-	b.WriteString(dimStyle.Render("From keman init. It is masked and kept only in this process."))
-	b.WriteString("\n")
-	return b.String()
+	return m.form("admin token", []string{
+		fieldLine(true, "token", m.adminInput.View(), false),
+	}, "Printed once by keman init. It is masked and kept only in this process.")
 }
 
 func (m model) renderCreate() string {
-	var b strings.Builder
-	b.WriteString("new virtual key\n\n")
-	b.WriteString(fieldLine(m.createField == 0, "name", m.nameInput.View()))
 	cred := "—"
 	if len(m.creds) == 0 {
 		cred = "no credentials yet"
@@ -546,83 +755,91 @@ func (m model) renderCreate() string {
 			cred = c.ID
 		}
 	}
-	kind := "standard"
+	kind := kmodel.KindStandard
 	if m.createKind == 1 {
-		kind = "canary"
+		kind = kmodel.KindCanary
 	}
-	b.WriteString(fieldLine(m.createField == 1, "credential", cred))
-	b.WriteString(fieldLine(m.createField == 2, "kind", kind))
-	return b.String()
+	hints := []string{
+		"A label for whoever uses the key, such as laptop or ci.",
+		"The real key that requests are forwarded with.",
+		"standard works normally. canary is a decoy that alerts on any use.",
+	}
+	return m.form("new virtual key", []string{
+		fieldLine(m.createField == 0, "name", m.nameInput.View(), false),
+		fieldLine(m.createField == 1, "credential", cred, true),
+		fieldLine(m.createField == 2, "kind", kind, true),
+	}, hints[m.createField])
 }
 
 func (m model) renderRevoke() string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "Revoke is permanent. Type %s to revoke this key.\n\n", m.revokeExpect)
-	b.WriteString(m.revokeInput.View())
-	b.WriteString("\n")
-	return b.String()
+	return m.form("revoke · "+m.revokeExpect, []string{
+		fieldLine(true, "confirm", m.revokeInput.View(), false),
+	}, "Revoke is permanent. Type "+m.revokeExpect+" to confirm. Disable (d) is reversible.")
 }
 
 func (m model) renderConfirm() string {
-	var b strings.Builder
 	name := m.policyName
 	if name == "" {
 		name = m.policyID
 	}
-	fmt.Fprintf(&b, "Switch %s to auto_disable.\n\n", name)
-	b.WriteString("Dry run, last 7 days\n")
+	var b strings.Builder
+	b.WriteString(titleStyle.Render("switch " + name + " to auto_disable"))
+	b.WriteString("\n\n")
+	b.WriteString(dimStyle.Render("dry run, last 7 days"))
+	b.WriteString("\n")
+	when := "no"
 	if m.confirmReport.WouldDisable {
-		when := "yes"
+		when = "yes"
 		if m.confirmReport.WouldDisableAt != nil {
-			when = "yes at " + fmtTime(*m.confirmReport.WouldDisableAt) + " UTC"
+			when = "yes, at " + fmtTime(*m.confirmReport.WouldDisableAt)
 		}
-		b.WriteString("Would disable: " + when + "\n")
-	} else {
-		b.WriteString("Would disable: no\n")
 	}
-	fmt.Fprintf(&b, "Requests that would have been blocked: %d\n", m.confirmReport.RequestsWouldBlock)
-	fmt.Fprintf(&b, "Detections: %d\n", m.confirmReport.Detections)
+	b.WriteString(kv("would disable", when))
+	b.WriteString(kv("would block", strconv.Itoa(m.confirmReport.RequestsWouldBlock)+" requests"))
+	b.WriteString(kv("detections", strconv.Itoa(m.confirmReport.Detections)))
 	return b.String()
 }
 
 func (m model) renderToken() string {
 	var b strings.Builder
-	b.WriteString("This virtual key is shown once.\n\n")
+	b.WriteString(titleStyle.Render("new virtual key"))
 	if m.tokenName != "" {
-		b.WriteString(m.tokenName)
-		b.WriteString("\n")
+		b.WriteString(dimStyle.Render(" · " + m.tokenName))
 	}
+	b.WriteString("\n\n")
+	// Never cut: the secret must be copyable in full.
 	b.WriteString(m.token)
+	b.WriteString("\n\n")
+	b.WriteString(warnStyle.Render("Copy it now. It is shown once."))
 	b.WriteString("\n")
 	return b.String()
 }
 
 func (m model) filterBanner() string {
-	if m.filter == "" {
+	f := m.filter()
+	if f == "" {
 		return ""
 	}
-	return dimStyle.Render("filter: "+m.filter) + "\n"
+	return dimStyle.Render("filter: "+f+"  (esc in / clears)") + "\n"
 }
 
-func (m model) wide() bool {
-	return m.width == 0 || m.width >= 80
+func (m model) totalWidth() int {
+	if m.width > 0 {
+		return m.width
+	}
+	return 100
 }
 
 func (m model) lineWidth() int {
-	if m.width > 2 {
-		return m.width - 2
-	}
-	return 80
+	return m.totalWidth()
 }
 
+// bodyBudget is the number of lines between the header and the status line.
 func (m model) bodyBudget() int {
 	if m.height <= 0 {
 		return 0
 	}
-	n := m.height - 4
-	if m.errMsg != "" {
-		n--
-	}
+	n := m.height - 3
 	if n < 1 {
 		return 1
 	}
@@ -648,23 +865,21 @@ func (m model) span(n int) (int, int) {
 	return start, end
 }
 
+// rowBudget is the number of table rows that fit under the table header
+// and an optional filter line.
 func (m model) rowBudget() int {
 	if m.height <= 0 {
 		return 20
 	}
-	n := m.height - 6
-	if n < 3 {
-		n = 3
+	n := m.bodyBudget() - 2
+	if n < 1 {
+		n = 1
 	}
 	return n
 }
 
-func fieldLine(on bool, label, value string) string {
-	mark := "  "
-	if on {
-		mark = "> "
-	}
-	return mark + fit(label, 12) + value + "\n"
+func kv(label, value string) string {
+	return dimStyle.Render(fit(label, 14)) + value + "\n"
 }
 
 func statusLabel(k Key) string {
@@ -674,27 +889,66 @@ func statusLabel(k Key) string {
 	case kmodel.StatusDisabled:
 		return "disabled"
 	}
-	if k.Kind == kmodel.KindCanary {
-		return "canary"
+	if k.ExpiresAt != nil && !k.ExpiresAt.After(time.Now()) {
+		return "expired"
 	}
 	return "active"
 }
 
 func statusStyle(k Key) lipgloss.Style {
 	switch statusLabel(k) {
-	case "disabled":
+	case "disabled", "expired":
 		return warnStyle
-	case "revoked", "canary":
+	case "revoked":
 		return badStyle
 	default:
 		return okStyle
 	}
 }
 
+func kindLabel(k Key) string {
+	if k.Kind == kmodel.KindCanary {
+		return kmodel.KindCanary
+	}
+	return kmodel.KindStandard
+}
+
+func kindStyle(k Key) lipgloss.Style {
+	if k.Kind == kmodel.KindCanary {
+		return canaryStyle
+	}
+	return dimStyle
+}
+
+func severityStyle(s string) lipgloss.Style {
+	switch s {
+	case "critical", "high":
+		return badStyle
+	case "medium":
+		return warnStyle
+	default:
+		return dimStyle
+	}
+}
+
+// usd is the one dollar format: at least cents, more digits only when a
+// sub-cent amount needs them.
+func usd(micro int64) string {
+	s := money.FormatUSD(micro)
+	dot := strings.IndexByte(s, '.')
+	switch {
+	case dot < 0:
+		s += ".00"
+	case len(s)-dot == 2:
+		s += "0"
+	}
+	return "$" + s
+}
+
 func todayLine(k Key) string {
-	s := "$" + money.FormatUSD(k.SpendToday)
+	s := usd(k.SpendToday)
 	if k.SpendOpen > 0 {
-		s += " (+$" + money.FormatUSD(k.SpendOpen) + ")"
+		s += " (+" + usd(k.SpendOpen) + ")"
 	}
 	return s
 }
@@ -703,28 +957,50 @@ func capLine(micro *int64) string {
 	if micro == nil {
 		return "—"
 	}
-	return "$" + money.FormatUSD(*micro)
+	return usd(*micro)
 }
 
 func fmtTime(t time.Time) string {
 	if t.IsZero() {
-		return ""
+		return "—"
 	}
-	return t.UTC().Format("01-02 15:04")
+	return t.UTC().Format(timeLayout)
 }
 
+// fit pads s to n cells, or cuts it with an ellipsis.
 func fit(s string, n int) string {
 	if n <= 0 {
 		return ""
 	}
-	if lipgloss.Width(s) <= n {
-		return s + strings.Repeat(" ", n-lipgloss.Width(s))
+	w := lipgloss.Width(s)
+	if w <= n {
+		return s + strings.Repeat(" ", n-w)
 	}
 	r := []rune(s)
-	for len(r) > 0 && lipgloss.Width(string(r)) > n {
+	for len(r) > 0 && lipgloss.Width(string(r))+1 > n {
 		r = r[:len(r)-1]
 	}
-	return string(r)
+	return string(r) + "…"
+}
+
+// cutLines keeps every line within w cells, so long values never wrap and
+// push the footer off the screen.
+func cutLines(s string, w int) string {
+	lines := strings.Split(s, "\n")
+	cut := lipgloss.NewStyle().MaxWidth(w)
+	for i, l := range lines {
+		if lipgloss.Width(l) > w {
+			lines[i] = cut.Render(l)
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+func lineCount(s string) int {
+	if s == "" {
+		return 0
+	}
+	return strings.Count(s, "\n") + 1
 }
 
 func scrollText(s string, n int) string {

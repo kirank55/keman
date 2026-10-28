@@ -240,7 +240,9 @@ type model struct {
 	creds  []Credential
 	alerts []AlertDest
 
-	filter        string
+	filters       [4]string
+	loaded        [4]bool
+	errFromPoll   bool
 	filtering     bool
 	filterInput   textinput.Model
 	detailID      string

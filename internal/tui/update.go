@@ -76,6 +76,37 @@ const openRouterPaths = "POST /api/v1/chat/completions, GET /api/v1/models, GET 
 
 var upstreamProfiles = []string{"openai", "anthropic", "generic"}
 
+// upstreamPreset is the suggested form for a profile. OpenRouter is the
+// OpenAI-compatible suggestion because it needs a path list.
+type upstreamPreset struct {
+	name, host, port, paths string
+	tls                     bool
+}
+
+var upstreamPresets = map[string]upstreamPreset{
+	"openai":    {name: "openrouter", host: "openrouter.ai", port: "443", paths: openRouterPaths, tls: true},
+	"anthropic": {name: "anthropic", host: "api.anthropic.com", port: "443", tls: true},
+	"generic":   {port: "443", tls: true},
+}
+
+func (m *model) applyPreset(p upstreamPreset) {
+	m.upName.SetValue(p.name)
+	m.upHost.SetValue(p.host)
+	m.upPort.SetValue(p.port)
+	m.upPaths.SetValue(p.paths)
+	m.upTLS = p.tls
+	m.upName.CursorEnd()
+	m.upHost.CursorEnd()
+	m.upPort.CursorEnd()
+	m.upPaths.CursorEnd()
+}
+
+// upstreamIs reports whether the form still holds preset p, unedited.
+func (m model) upstreamIs(p upstreamPreset) bool {
+	return m.upName.Value() == p.name && m.upHost.Value() == p.host &&
+		m.upPort.Value() == p.port && m.upPaths.Value() == p.paths && m.upTLS == p.tls
+}
+
 func (m model) Init() tea.Cmd {
 	if m.overlay == overlayAdmin {
 		return func() tea.Msg { return focusAdminMsg{} }
@@ -95,7 +126,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m.focusAdmin()
 	case tea.KeyMsg:
+		// Feedback lasts until the next key, not the next poll.
 		m.note = ""
+		m.errMsg = ""
+		m.errFromPoll = false
 		return m.onKey(msg)
 	case tickMsg:
 		next, fetch := m.afterTick()
@@ -106,11 +140,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.loading = false
 		if msg.err != nil {
-			m.errMsg = errText(msg.err)
+			m.pollErr(msg.err)
 			return m, nil
 		}
 		m.keys = msg.keys
-		m.clearErr()
+		m.loaded[screenKeys] = true
+		m.clearPollErr()
 		m.clamp()
 		return m, nil
 	case detsLoaded:
@@ -119,7 +154,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.loading = false
 		if msg.err != nil {
-			m.errMsg = errText(msg.err)
+			m.pollErr(msg.err)
 			return m, nil
 		}
 		if msg.keyID != "" {
@@ -128,9 +163,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		} else {
 			m.dets = msg.rows
+			m.loaded[screenDetections] = true
 			m.clamp()
 		}
-		m.clearErr()
+		m.clearPollErr()
 		return m, nil
 	case usageLoaded:
 		if msg.keyID != m.detailID {
@@ -138,12 +174,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.loading = false
 		if msg.err != nil {
-			m.errMsg = errText(msg.err)
+			m.pollErr(msg.err)
 			return m, nil
 		}
 		m.detailUsage = msg.usage
 		m.detailLoaded = true
-		m.clearErr()
+		m.clearPollErr()
 		return m, nil
 	case auditLoaded:
 		if msg.gen != m.gen {
@@ -151,11 +187,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.loading = false
 		if msg.err != nil {
-			m.errMsg = errText(msg.err)
+			m.pollErr(msg.err)
 			return m, nil
 		}
 		m.audits = msg.rows
-		m.clearErr()
+		m.loaded[screenAudit] = true
+		m.clearPollErr()
 		m.clamp()
 		return m, nil
 	case setupLoaded:
@@ -164,13 +201,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.loading = false
 		if msg.err != nil {
-			m.errMsg = errText(msg.err)
+			m.pollErr(msg.err)
 			return m, nil
 		}
 		m.ups = msg.ups
 		m.creds = msg.creds
 		m.alerts = msg.alerts
-		m.clearErr()
+		m.loaded[screenSetup] = true
+		m.clearPollErr()
 		return m, nil
 	case actionDone:
 		m.loading = false
@@ -278,6 +316,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.focusAdmin()
 		}
 		m.keys = msg.keys
+		m.loaded[screenKeys] = true
 		m.errMsg = ""
 		m.adminInput.SetValue("")
 		m.overlay = overlayNone
@@ -324,15 +363,17 @@ func (m model) onKey(msg tea.KeyMsg) (model, tea.Cmd) {
 		m.adminInput.SetValue("")
 		return m, tea.Quit
 	}
+	if s == "q" && !m.textFocused() {
+		m.token = ""
+		m.credSecret.SetValue("")
+		m.adminInput.SetValue("")
+		return m, tea.Quit
+	}
 	if m.filtering {
 		return m.onFilter(msg)
 	}
 	switch m.overlay {
 	case overlayHelp:
-		if s == "q" {
-			m.token = ""
-			return m, tea.Quit
-		}
 		if s == "esc" || s == "?" {
 			m.overlay = m.helpFrom
 		}
@@ -361,13 +402,10 @@ func (m model) onKey(msg tea.KeyMsg) (model, tea.Cmd) {
 
 func (m model) onToken(s string) (model, tea.Cmd) {
 	switch s {
-	case "enter", "esc", "q":
+	case "enter", "esc":
 		m.token = ""
 		m.tokenName = ""
 		m.overlay = overlayNone
-		if s == "q" {
-			return m, tea.Quit
-		}
 		m.loading = true
 		m.gen++
 		return m, m.fetchCurrent()
@@ -380,7 +418,7 @@ func (m model) onFilter(msg tea.KeyMsg) (model, tea.Cmd) {
 	switch msg.String() {
 	case "esc":
 		m.filtering = false
-		m.filter = ""
+		m.filters[m.screen] = ""
 		m.filterInput.SetValue("")
 		m.filterInput.Blur()
 		m.cursor = 0
@@ -388,7 +426,7 @@ func (m model) onFilter(msg tea.KeyMsg) (model, tea.Cmd) {
 		return m, nil
 	case "enter":
 		m.filtering = false
-		m.filter = strings.TrimSpace(m.filterInput.Value())
+		m.filters[m.screen] = strings.TrimSpace(m.filterInput.Value())
 		m.filterInput.Blur()
 		m.cursor = 0
 		m.clamp()
@@ -396,7 +434,7 @@ func (m model) onFilter(msg tea.KeyMsg) (model, tea.Cmd) {
 	default:
 		var cmd tea.Cmd
 		m.filterInput, cmd = m.filterInput.Update(msg)
-		m.filter = m.filterInput.Value()
+		m.filters[m.screen] = m.filterInput.Value()
 		m.cursor = 0
 		m.clamp()
 		return m, cmd
@@ -405,9 +443,6 @@ func (m model) onFilter(msg tea.KeyMsg) (model, tea.Cmd) {
 
 func (m model) onScreen(msg tea.KeyMsg) (model, tea.Cmd) {
 	switch msg.String() {
-	case "q":
-		m.token = ""
-		return m, tea.Quit
 	case "1":
 		return m.switchScreen(screenKeys)
 	case "2":
@@ -426,7 +461,7 @@ func (m model) onScreen(msg tea.KeyMsg) (model, tea.Cmd) {
 		return m, nil
 	case "j", "down":
 		if m.screen == screenSetup {
-			m.scroll++
+			m.scroll = min(m.scroll+1, m.maxScroll(m.renderSetup()))
 			return m, nil
 		}
 		return m.move(1), nil
@@ -443,11 +478,22 @@ func (m model) onScreen(msg tea.KeyMsg) (model, tea.Cmd) {
 			return m, nil
 		}
 		m.filtering = true
-		m.filterInput.SetValue(m.filter)
+		m.filterInput.SetValue(m.filter())
 		return m, m.filterInput.Focus()
 	case "enter":
-		if m.screen == screenKeys {
+		switch m.screen {
+		case screenKeys:
 			return m.openDetail()
+		case screenDetections:
+			rows := m.visibleDets()
+			if m.cursor < len(rows) {
+				return m.openDetailID(rows[m.cursor].KeyID)
+			}
+		case screenAudit:
+			rows := m.visibleAudits()
+			if m.cursor < len(rows) {
+				return m.openDetailID(rows[m.cursor].Target)
+			}
 		}
 		return m, nil
 	case "d":
@@ -486,15 +532,12 @@ func (m model) onScreen(msg tea.KeyMsg) (model, tea.Cmd) {
 
 func (m model) onDetail(msg tea.KeyMsg) (model, tea.Cmd) {
 	switch msg.String() {
-	case "esc", "q":
-		if msg.String() == "q" {
-			m.token = ""
-			return m, tea.Quit
-		}
+	case "esc":
 		m.overlay = overlayNone
+		m.scroll = 0
 		return m, nil
 	case "j", "down":
-		m.scroll++
+		m.scroll = min(m.scroll+1, m.maxScroll(m.renderDetail()))
 		return m, nil
 	case "k", "up":
 		if m.scroll > 0 {
@@ -680,7 +723,7 @@ func (m model) onCredential(msg tea.KeyMsg) (model, tea.Cmd) {
 
 func (m model) onAdmin(msg tea.KeyMsg) (model, tea.Cmd) {
 	switch msg.String() {
-	case "esc", "q":
+	case "esc":
 		m.adminInput.SetValue("")
 		m.applyToken("")
 		m.adminHeld = false
@@ -725,11 +768,7 @@ func (m model) openUpstream() (model, tea.Cmd) {
 	m.overlay = overlayUpstream
 	m.upField = 0
 	m.upProfile = 0
-	m.upTLS = true
-	m.upName.SetValue("openrouter")
-	m.upHost.SetValue("openrouter.ai")
-	m.upPort.SetValue("443")
-	m.upPaths.SetValue(openRouterPaths)
+	m.applyPreset(upstreamPresets[upstreamProfiles[0]])
 	m.errMsg = ""
 	m.note = ""
 	return m.focusUpstream()
@@ -840,11 +879,15 @@ func splitPaths(s string) []string {
 
 func (m *model) cycleUpstream(next bool) {
 	if m.upField == 1 {
+		prev := upstreamPresets[upstreamProfiles[m.upProfile]]
 		n := len(upstreamProfiles)
 		if next {
 			m.upProfile = (m.upProfile + 1) % n
 		} else {
 			m.upProfile = (m.upProfile + n - 1) % n
+		}
+		if m.upstreamIs(prev) {
+			m.applyPreset(upstreamPresets[upstreamProfiles[m.upProfile]])
 		}
 	}
 	if m.upField == 4 {
@@ -992,6 +1035,16 @@ func (m model) openDetail() (model, tea.Cmd) {
 	k, ok := m.selected()
 	if !ok {
 		m.errMsg = "no key selected"
+		return m, nil
+	}
+	return m.openDetailID(k.ID)
+}
+
+// openDetailID opens the key detail for id, from any list that names a key.
+func (m model) openDetailID(id string) (model, tea.Cmd) {
+	k, ok := m.keyByID(id)
+	if !ok {
+		m.errMsg = "this entry is not a listed virtual key"
 		return m, nil
 	}
 	m.detailID = k.ID
@@ -1254,10 +1307,91 @@ func (m model) editPolicy(msg tea.Msg) (model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m *model) clearErr() {
-	if !m.busy() {
+// pollErr shows a failed background load. The next good load clears it.
+func (m *model) pollErr(err error) {
+	m.errMsg = errText(err)
+	m.errFromPoll = true
+}
+
+func (m *model) clearPollErr() {
+	if m.errFromPoll {
 		m.errMsg = ""
+		m.errFromPoll = false
 	}
+}
+
+func (m model) filter() string {
+	return m.filters[m.screen]
+}
+
+func (m model) hasData() bool {
+	if m.overlay != overlayNone {
+		return true
+	}
+	return m.loaded[m.screen]
+}
+
+// textFocused reports whether keys are being typed into a field, so q is
+// text rather than quit.
+func (m model) textFocused() bool {
+	if m.filtering {
+		return true
+	}
+	switch m.overlay {
+	case overlayRevoke, overlayAdmin:
+		return true
+	case overlayPolicy:
+		return m.polField > 0
+	case overlayCreate:
+		return m.createField == 0
+	case overlayUpstream:
+		return m.upField != 1 && m.upField != 4
+	case overlayCredential:
+		return m.credField == 0 || m.credField == 3
+	}
+	return false
+}
+
+// onLastField reports whether enter saves the open form.
+func (m model) onLastField() bool {
+	switch m.overlay {
+	case overlayPolicy:
+		return m.polField == 3
+	case overlayCreate:
+		return m.createField == 2
+	case overlayUpstream:
+		return m.upField == 5
+	case overlayCredential:
+		return m.credField == 3
+	}
+	return false
+}
+
+// maxScroll is the furthest scroll that still fills the body with text.
+func (m model) maxScroll(text string) int {
+	n := lineCount(strings.TrimSuffix(text, "\n"))
+	budget := m.bodyBudget()
+	if budget <= 0 {
+		return max(0, n-1)
+	}
+	return max(0, n-budget)
+}
+
+// keyLabel names a key id by its name when the key is listed.
+func (m model) keyLabel(id string) string {
+	if k, ok := m.keyByID(id); ok && k.Name != "" {
+		return k.Name + " (" + id + ")"
+	}
+	return id
+}
+
+func (m model) upstreamName(id string) string {
+	for _, u := range m.ups {
+		if u.ID == id && u.Name != "" {
+			return u.Name
+		}
+	}
+	return id
 }
 
 func (m model) fetchCurrent() tea.Cmd {
@@ -1375,19 +1509,19 @@ func (m model) keyByID(id string) (Key, bool) {
 }
 
 func (m model) visibleKeys() []Key {
-	return filterBy(m.keys, m.filter, func(k Key) string {
+	return filterBy(m.keys, m.filters[screenKeys], func(k Key) string {
 		return k.Name + " " + k.ID
 	})
 }
 
 func (m model) visibleDets() []Detection {
-	return filterBy(m.dets, m.filter, func(d Detection) string {
+	return filterBy(m.dets, m.filters[screenDetections], func(d Detection) string {
 		return d.Rule + " " + d.KeyID + " " + d.Severity
 	})
 }
 
 func (m model) visibleAudits() []AuditRow {
-	return filterBy(m.audits, m.filter, func(a AuditRow) string {
+	return filterBy(m.audits, m.filters[screenAudit], func(a AuditRow) string {
 		return a.Action + " " + a.Target + " " + a.Actor
 	})
 }
