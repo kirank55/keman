@@ -57,18 +57,38 @@ func TestHTTPKeyUsage(t *testing.T) {
 			t.Errorf("path %s", r.URL.Path)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"requests":2,"tokens_in":30,"tokens_out":10,"cost_microusd":1500,"priced":1,"last_seen":"2026-10-27T16:58:00Z","clients":[{"ip":"127.0.0.1","requests":2,"last_seen":"2026-10-27T16:58:00Z"}],"models":[{"model":"openai/gpt-4o-mini","requests":2,"tokens_in":30,"tokens_out":10,"cost_microusd":1500,"priced":1}],"recent":[{"time":"2026-10-27T16:58:00Z","ip":"127.0.0.1","operation":"POST /api/v1/chat/completions","status":200,"latency_ms":1885,"model":"openai/gpt-4o-mini","tokens_in":10,"tokens_out":4,"cost_microusd":1500}]}`))
+		_, _ = w.Write([]byte(`{"requests":2,"tokens_in":30,"tokens_out":10,"cost_microusd":1500,"priced":1,"last_seen":"2026-10-27T16:58:00Z","clients":[{"ip":"127.0.0.1","name":"loopback","requests":2,"last_seen":"2026-10-27T16:58:00Z"}],"models":[{"model":"openai/gpt-4o-mini","requests":2,"tokens_in":30,"tokens_out":10,"cost_microusd":1500,"priced":1}],"recent":[{"time":"2026-10-27T16:58:00Z","ip":"127.0.0.1","client_name":"loopback","operation":"POST /api/v1/chat/completions","status":200,"latency_ms":1885,"model":"openai/gpt-4o-mini","tokens_in":10,"tokens_out":4,"cost_microusd":1500}]}`))
 	}))
 	defer srv.Close()
 	got, err := NewHTTP(adminclient.New(srv.URL, "kma")).KeyUsage(context.Background(), "abcd")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Requests != 2 || got.TokensIn != 30 || len(got.Clients) != 1 || got.Clients[0].IP != "127.0.0.1" {
+	if got.Requests != 2 || got.TokensIn != 30 || len(got.Clients) != 1 || got.Clients[0].IP != "127.0.0.1" || got.Clients[0].Name != "loopback" {
 		t.Fatalf("%+v", got)
 	}
-	if len(got.Recent) != 1 || got.Recent[0].Operation != "POST /api/v1/chat/completions" || got.Recent[0].CostMicro == nil {
+	if len(got.Recent) != 1 || got.Recent[0].Operation != "POST /api/v1/chat/completions" || got.Recent[0].CostMicro == nil || got.Recent[0].ClientName != "loopback" {
 		t.Fatalf("%+v", got.Recent)
+	}
+}
+
+func TestHTTPSetClientName(t *testing.T) {
+	var got string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut || r.URL.Path != "/v1/clients" {
+			t.Errorf("%s %s", r.Method, r.URL.Path)
+		}
+		b, _ := io.ReadAll(r.Body)
+		got = string(b)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ip":"203.0.113.8","name":"office"}`))
+	}))
+	defer srv.Close()
+	if err := NewHTTP(adminclient.New(srv.URL, "kma")).SetClientName(context.Background(), "203.0.113.8", "office"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, `"ip":"203.0.113.8"`) || !strings.Contains(got, `"name":"office"`) {
+		t.Fatal(got)
 	}
 }
 

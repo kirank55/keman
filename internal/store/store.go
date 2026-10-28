@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"strings"
 	"time"
 
@@ -148,6 +149,10 @@ CREATE TABLE IF NOT EXISTS audit_log (
   before_json TEXT NOT NULL,
   after_json TEXT NOT NULL,
   ip TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS client_names (
+  ip TEXT PRIMARY KEY,
+  name TEXT NOT NULL
 );
 `
 
@@ -526,6 +531,7 @@ func (s *Store) EventsSince(ctx context.Context, keyID string, since time.Time) 
 // UsageClient is one source address that has called with a virtual key.
 type UsageClient struct {
 	IP       string    `json:"ip"`
+	Name     string    `json:"name,omitempty"`
 	Country  string    `json:"country,omitempty"`
 	ASN      int       `json:"asn,omitempty"`
 	Requests int       `json:"requests"`
@@ -557,7 +563,11 @@ type UsageRequest struct {
 	CostMicro     *int64    `json:"cost_microusd,omitempty"`
 	CostEstimated bool      `json:"cost_estimated,omitempty"`
 	BlockedCode   string    `json:"blocked_code,omitempty"`
+	ClientName    string    `json:"client_name,omitempty"`
 }
+
+// UsageListLimit is how many clients, models, and recent requests the key view asks for.
+const UsageListLimit = 15
 
 // KeyUsage is request activity still kept for a virtual key.
 type KeyUsage struct {
@@ -579,7 +589,7 @@ type KeyUsage struct {
 // limit caps each of those lists. Events older than the retention window are already gone.
 func (s *Store) KeyUsage(ctx context.Context, keyID string, limit int) (KeyUsage, error) {
 	if limit <= 0 {
-		limit = 12
+		limit = UsageListLimit
 	}
 	var out KeyUsage
 	out.Clients = []UsageClient{}
@@ -682,7 +692,67 @@ func (s *Store) KeyUsage(ctx context.Context, keyID string, limit int) (KeyUsage
 		}
 		out.Recent = append(out.Recent, r)
 	}
-	return out, rrows.Err()
+	if err := rrows.Err(); err != nil {
+		return KeyUsage{}, err
+	}
+	if err := s.attachClientNames(ctx, &out); err != nil {
+		return KeyUsage{}, err
+	}
+	return out, nil
+}
+
+// ClientNames returns the label saved for each client address.
+func (s *Store) ClientNames(ctx context.Context) (map[string]string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT ip, name FROM client_names`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]string{}
+	for rows.Next() {
+		var ip, name string
+		if err := rows.Scan(&ip, &name); err != nil {
+			return nil, err
+		}
+		out[ip] = name
+	}
+	return out, rows.Err()
+}
+
+// SetClientName remembers name for ip. An empty name clears it.
+func (s *Store) SetClientName(ctx context.Context, ip, name string) error {
+	if name == "" {
+		_, err := s.db.ExecContext(ctx, `DELETE FROM client_names WHERE ip = ?`, ip)
+		return err
+	}
+	_, err := s.db.ExecContext(ctx, `INSERT INTO client_names (ip, name) VALUES (?, ?)
+		ON CONFLICT(ip) DO UPDATE SET name = excluded.name`, ip, name)
+	return err
+}
+
+func (s *Store) attachClientNames(ctx context.Context, out *KeyUsage) error {
+	names, err := s.ClientNames(ctx)
+	if err != nil {
+		return err
+	}
+	for i := range out.Clients {
+		out.Clients[i].Name = clientLabel(names, out.Clients[i].IP)
+	}
+	for i := range out.Recent {
+		out.Recent[i].ClientName = clientLabel(names, out.Recent[i].IP)
+	}
+	return nil
+}
+
+func clientLabel(names map[string]string, ip string) string {
+	if n := names[ip]; n != "" {
+		return n
+	}
+	parsed := net.ParseIP(ip)
+	if parsed == nil {
+		return ""
+	}
+	return names[parsed.String()]
 }
 
 func (s *Store) SaveBaseline(ctx context.Context, b model.Baseline) error {

@@ -38,8 +38,13 @@ var (
 		Background(lipgloss.AdaptiveColor{Light: "254", Dark: "236"})
 )
 
-// timeLayout is the one timestamp format on every screen.
-const timeLayout = "2006-01-02 15:04 UTC"
+// timeLayout is the widest timestamp the tables reserve: a date, a clock,
+// and a zone such as PDT or +05:30.
+const timeLayout = "2006-01-02 15:04 +00:00"
+
+// recentShown is how many of the newest requests the key view draws.
+// The admin API returns this many.
+const recentShown = 15
 
 const helpText = `keman
 
@@ -48,6 +53,7 @@ lists     j/k or arrows move · enter open · / filter this view
 keys      p policy: lock to addresses or countries, expiry, limits
           r rotate (new key, old one stops later or now)
           d disable · e enable · x revoke (type the name)
+          on a key: n names a client address
 setup     a add upstream · c add credential · n new virtual key
 forms     tab or arrows change field · left/right change a choice
           enter next field, then save · esc cancel
@@ -55,7 +61,9 @@ quit      q, except while typing in a field · ctrl+c always
 
 lock      open means a leaked copy works from anywhere. Set addresses in p.
 alerts    rules that fired on the key in the last 7 days.
-Times are UTC. Money is in dollars and only applies to LLM upstreams.
+Times follow this machine's timezone when one is known, otherwise UTC.
+Daily and monthly spend caps reset at midnight UTC.
+Money is in dollars and only applies to LLM upstreams.
 Type the admin token when asked, unless KEMAN_ADMIN_TOKEN is set.
 keman scan, keman exposure, keman canary, credential rotation,
 rekey, admin-token rotate, and alerts are on the CLI.
@@ -111,6 +119,8 @@ func (m model) renderBody() string {
 		return m.renderCredential()
 	case overlayAdmin:
 		return m.renderAdmin()
+	case overlayClient:
+		return m.renderClient()
 	case overlayDetail:
 		return m.renderDetail()
 	}
@@ -204,7 +214,12 @@ func (m model) footerText() string {
 	case overlayHelp:
 		return "esc back · q quit"
 	case overlayDetail:
-		return "p policy · r rotate · d disable · e enable · x revoke · j/k scroll · esc back · q quit"
+		return "p policy · r rotate · n name · d disable · e enable · x revoke · j/k scroll · esc back · q quit"
+	case overlayClient:
+		if m.clientEditing {
+			return "enter save · esc back · empty clears the name"
+		}
+		return "j/k move · enter name · esc back"
 	}
 	switch m.screen {
 	case screenDetections:
@@ -457,7 +472,12 @@ func lastSeenLabel(k Key, now time.Time) string {
 		return "never"
 	}
 	s := ago(now.Sub(k.LastSeen)) + " ago"
-	if k.LastIP != "" {
+	switch {
+	case k.LastClient != "" && k.LastIP != "":
+		s += " · " + k.LastClient + " " + k.LastIP
+	case k.LastClient != "":
+		s += " · " + k.LastClient
+	case k.LastIP != "":
 		s += " · " + k.LastIP
 	}
 	if k.LastCountry != "" {
@@ -631,7 +651,9 @@ func detailColumns(w int) (left, right int, split bool) {
 	if w < 100 {
 		return w, w, false
 	}
-	left = 40
+	// The requests side keeps the address column, so the rail stays narrower
+	// until the terminal is wide enough for both.
+	left = 36
 	if w >= 120 {
 		left = 52
 	}
@@ -839,10 +861,10 @@ func (m model) detailStatLines(k Key, now time.Time) []string {
 		switch len(u.Clients) {
 		case 0:
 		case 1:
-			lines = append(lines, clientWhere(u.Clients[0]))
+			lines = append(lines, clientLine(u.Clients[0], false))
 		default:
 			for _, c := range u.Clients {
-				lines = append(lines, fmt.Sprintf("%s  %d", clientWhere(c), c.Requests))
+				lines = append(lines, clientLine(c, true))
 			}
 		}
 	}
@@ -854,7 +876,7 @@ func (m model) detailStatLines(k Key, now time.Time) []string {
 	}
 	lines = append(lines, policyLines(k, now)...)
 	blocked := 0
-	for _, r := range u.Recent {
+	for _, r := range recentOf(u) {
 		if r.BlockedCode != "" {
 			blocked++
 		}
@@ -938,44 +960,78 @@ func policyLines(k Key, now time.Time) []string {
 	return lines
 }
 
+func recentOf(u KeyUsage) []UsageRequest {
+	if len(u.Recent) <= recentShown {
+		return u.Recent
+	}
+	return u.Recent[:recentShown]
+}
+
 func (m model) detailCalls(k Key, inner int, now time.Time) (string, string) {
 	u := m.detailUsage
 	if !m.detailLoaded {
 		return "requests", "loading…"
 	}
-	if len(u.Recent) == 0 {
+	recent := recentOf(u)
+	if len(recent) == 0 {
 		return "requests", dimStyle.Render("none")
 	}
 	llm := k.Kind != kmodel.KindCanary && m.isLLM(k)
-	shared := sharedOperation(u.Recent)
+	shared := sharedOperation(recent)
 	title := "requests"
+	if len(recent) == recentShown && u.Requests > len(recent) {
+		title = fmt.Sprintf("requests · %d recent", len(recent))
+	}
+	title += " · " + zoneLabel(now.In(zone()))
 	if shared != "" {
 		title += " · " + shared
 	}
-	showIP := distinctIPs(u.Recent) > 1
+	showClient := false
+	for _, r := range recent {
+		if r.ClientName != "" {
+			showClient = true
+			break
+		}
+	}
 	var plain []string
 	showStatus := false
-	for _, r := range u.Recent {
+	for _, r := range recent {
 		if r.Status >= 400 || r.BlockedCode != "" {
 			showStatus = true
 		}
 		plain = append(plain, requestStatus(r))
 	}
-	timeW, statusW, tokW, costW := 5, 0, 0, 0
+	timeW, statusW, ipW, clientW, tokW, costW := 5, 0, 1, 0, 0, 0
 	type built struct {
-		when, status, name, tokens, cost string
+		when, status, ip, client, name, tokens, cost string
 	}
-	rows := make([]built, len(u.Recent))
-	for i, r := range u.Recent {
-		row := built{when: shortTime(r.Time, now), name: requestName(r, llm, shared, showIP)}
+	rows := make([]built, len(recent))
+	for i, r := range recent {
+		ip := r.IP
+		if ip == "" {
+			ip = "—"
+		}
+		row := built{when: shortTime(r.Time, now), ip: ip, name: requestName(r, llm, shared)}
+		if n := lipgloss.Width(row.when); n > timeW {
+			timeW = n
+		}
+		if n := lipgloss.Width(row.ip); n > ipW {
+			ipW = n
+		}
 		if showStatus {
 			row.status = plain[i]
 			if n := lipgloss.Width(row.status); n > statusW {
 				statusW = n
 			}
 		}
-		if n := lipgloss.Width(row.when); n > timeW {
-			timeW = n
+		if showClient {
+			row.client = r.ClientName
+			if row.client == "" {
+				row.client = "—"
+			}
+			if n := lipgloss.Width(row.client); n > clientW {
+				clientW = n
+			}
 		}
 		if llm {
 			row.tokens = fmt.Sprintf("%d → %d", r.TokensIn, r.TokensOut)
@@ -994,9 +1050,19 @@ func (m model) detailCalls(k Key, inner int, now time.Time) (string, string) {
 		}
 		rows[i] = row
 	}
+	if ipW > 24 {
+		ipW = 24
+	}
+	if clientW > 16 {
+		clientW = 16
+	}
 	fixed := timeW
 	if statusW > 0 {
 		fixed += 2 + statusW
+	}
+	fixed += 2 + ipW
+	if clientW > 0 {
+		fixed += 2 + clientW
 	}
 	fixed += 2
 	if tokW > 0 {
@@ -1022,6 +1088,16 @@ func (m model) detailCalls(k Key, inner int, now time.Time) (string, string) {
 			b.WriteString(cell)
 		}
 		b.WriteString("  ")
+		b.WriteString(align(row.ip, ipW, false))
+		if clientW > 0 {
+			b.WriteString("  ")
+			label := align(row.client, clientW, false)
+			if row.client == "—" {
+				label = dimStyle.Render(label)
+			}
+			b.WriteString(label)
+		}
+		b.WriteString("  ")
 		b.WriteString(align(row.name, modelW, false))
 		if tokW > 0 {
 			b.WriteString("  ")
@@ -1036,20 +1112,13 @@ func (m model) detailCalls(k Key, inner int, now time.Time) (string, string) {
 	return title, strings.Join(lines, "\n")
 }
 
-func requestName(r UsageRequest, llm bool, shared string, showIP bool) string {
+func requestName(r UsageRequest, llm bool, shared string) string {
 	name := r.Model
 	if !llm || name == "" {
 		if shared == "" && r.Operation != "" {
 			name = r.Operation
 		} else if name == "" {
 			name = "—"
-		}
-	}
-	if showIP && r.IP != "" {
-		if name == "—" {
-			name = r.IP
-		} else {
-			name += "  " + r.IP
 		}
 	}
 	return name
@@ -1067,16 +1136,6 @@ func requestStatus(r UsageRequest) string {
 		s += r.BlockedCode
 	}
 	return s
-}
-
-func distinctIPs(rs []UsageRequest) int {
-	seen := map[string]struct{}{}
-	for _, r := range rs {
-		if r.IP != "" {
-			seen[r.IP] = struct{}{}
-		}
-	}
-	return len(seen)
 }
 
 func sharedOperation(rs []UsageRequest) string {
@@ -1121,7 +1180,8 @@ func shortTime(t, now time.Time) string {
 	if t.IsZero() {
 		return "—"
 	}
-	t, now = t.UTC(), now.UTC()
+	loc := zone()
+	t, now = t.In(loc), now.In(loc)
 	switch {
 	case t.Year() == now.Year() && t.YearDay() == now.YearDay():
 		return t.Format("15:04")
@@ -1213,6 +1273,110 @@ func clientWhere(c UsageClient) string {
 		s += fmt.Sprintf(" AS%d", c.ASN)
 	}
 	return s
+}
+
+func clientLine(c UsageClient, withCount bool) string {
+	s := clientWhere(c)
+	if c.Name != "" {
+		s = c.Name + "  " + s
+	}
+	if withCount {
+		s = fmt.Sprintf("%s  %d", s, c.Requests)
+	}
+	return s
+}
+
+// clientRows is every address seen for the open key, busiest first.
+func (m model) clientRows() []UsageClient {
+	seen := map[string]struct{}{}
+	var out []UsageClient
+	for _, c := range m.detailUsage.Clients {
+		if c.IP == "" {
+			continue
+		}
+		if _, ok := seen[c.IP]; ok {
+			continue
+		}
+		seen[c.IP] = struct{}{}
+		out = append(out, c)
+	}
+	for _, r := range recentOf(m.detailUsage) {
+		if r.IP == "" {
+			continue
+		}
+		if _, ok := seen[r.IP]; ok {
+			continue
+		}
+		seen[r.IP] = struct{}{}
+		out = append(out, UsageClient{IP: r.IP, Name: r.ClientName})
+	}
+	return out
+}
+
+func (m model) renderClient() string {
+	rows := m.clientRows()
+	if m.clientEditing {
+		ip := ""
+		if m.clientCursor >= 0 && m.clientCursor < len(rows) {
+			ip = rows[m.clientCursor].IP
+		}
+		return m.form("name · "+ip, []string{
+			fieldLine(true, "name", m.clientInput.View(), false),
+		}, "A short label for this address, such as laptop or ci. Empty clears it.")
+	}
+	var b strings.Builder
+	b.WriteString(titleStyle.Render("clients"))
+	b.WriteString("\n\n")
+	if len(rows) == 0 {
+		b.WriteString("No clients on this key yet.\n")
+		return b.String()
+	}
+	ipW := 2
+	for _, c := range rows {
+		if n := lipgloss.Width(c.IP); n > ipW {
+			ipW = n
+		}
+	}
+	budget := m.bodyBudget() - 4
+	if budget < 1 {
+		budget = 1
+	}
+	start := 0
+	if m.clientCursor >= budget {
+		start = m.clientCursor - budget + 1
+	}
+	end := start + budget
+	if end > len(rows) {
+		end = len(rows)
+	}
+	for i := start; i < end; i++ {
+		c := rows[i]
+		mark := "  "
+		name := c.Name
+		st := plainStyle
+		if name == "" {
+			name = "unnamed"
+			st = dimStyle
+		}
+		if i == m.clientCursor {
+			mark = markStyle.Render("› ")
+			if c.Name != "" {
+				st = titleStyle
+			}
+		}
+		b.WriteString(mark)
+		b.WriteString(align(c.IP, ipW, false))
+		b.WriteString("  ")
+		b.WriteString(st.Render(name))
+		if c.Requests > 0 {
+			b.WriteString(dimStyle.Render(fmt.Sprintf("  %d", c.Requests)))
+		}
+		b.WriteString("\n")
+	}
+	b.WriteString("\n")
+	b.WriteString(dimStyle.Render("A name is kept for this address on every key."))
+	b.WriteString("\n")
+	return b.String()
 }
 
 // form renders the shared form layout: a title, one row per field, and a
@@ -1576,11 +1740,60 @@ func capLine(micro *int64) string {
 	return usd(*micro)
 }
 
+// timeZone overrides the zone used on screen. Nil uses the detected local
+// zone, or UTC when none is detected.
+var timeZone func() *time.Location
+
+func zone() *time.Location {
+	if timeZone != nil {
+		return timeZone()
+	}
+	return zoneFrom(time.Local)
+}
+
+// zoneFrom reports loc when a timezone was detected. Go names a failed
+// lookup "UTC".
+func zoneFrom(loc *time.Location) *time.Location {
+	if loc == nil || loc.String() == "UTC" {
+		return time.UTC
+	}
+	return loc
+}
+
+func zoneLabel(t time.Time) string {
+	name, offset := t.Zone()
+	if offset == 0 && (name == "" || name == "UTC" || name == "GMT" || name == "Local") {
+		return "UTC"
+	}
+	if zoneAbbrev(name) {
+		return name
+	}
+	sign := "+"
+	if offset < 0 {
+		sign = "-"
+		offset = -offset
+	}
+	return fmt.Sprintf("%s%02d:%02d", sign, offset/3600, (offset%3600)/60)
+}
+
+func zoneAbbrev(name string) bool {
+	if name == "" || len(name) > 5 {
+		return false
+	}
+	for _, r := range name {
+		if r < 'A' || r > 'Z' {
+			return false
+		}
+	}
+	return true
+}
+
 func fmtTime(t time.Time) string {
 	if t.IsZero() {
 		return "—"
 	}
-	return t.UTC().Format(timeLayout)
+	local := t.In(zone())
+	return local.Format("2006-01-02 15:04") + " " + zoneLabel(local)
 }
 
 // fit pads s to n cells, or cuts it with an ellipsis.

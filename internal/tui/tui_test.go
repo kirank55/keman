@@ -15,19 +15,20 @@ import (
 )
 
 type fakeAPI struct {
-	keys       []Key
-	creds      []Credential
-	status     []string
-	policies   []bool
-	created    CreatedKey
-	lists      int
-	listErr    error
-	token      string
-	upDrafts   []UpstreamDraft
-	credDrafts []CredentialDraft
-	lastPolicy Policy
-	expiries   []*time.Time
-	rotations  []time.Duration
+	keys        []Key
+	creds       []Credential
+	status      []string
+	policies    []bool
+	created     CreatedKey
+	lists       int
+	listErr     error
+	token       string
+	upDrafts    []UpstreamDraft
+	credDrafts  []CredentialDraft
+	lastPolicy  Policy
+	expiries    []*time.Time
+	rotations   []time.Duration
+	clientNames []struct{ ip, name string }
 }
 
 func (f *fakeAPI) ListKeys(context.Context) ([]Key, error) {
@@ -90,6 +91,10 @@ func (f *fakeAPI) AddUpstream(_ context.Context, d UpstreamDraft) (Upstream, err
 func (f *fakeAPI) AddCredential(_ context.Context, d CredentialDraft) (Credential, error) {
 	f.credDrafts = append(f.credDrafts, d)
 	return Credential{ID: "c-new", Name: d.Name, UpstreamID: d.UpstreamID, AuthStyle: "header"}, nil
+}
+func (f *fakeAPI) SetClientName(_ context.Context, ip, name string) error {
+	f.clientNames = append(f.clientNames, struct{ ip, name string }{ip, name})
+	return nil
 }
 
 func sample(f *fakeAPI) model {
@@ -155,6 +160,10 @@ func TestKeysShowLockExpiryAndAlerts(t *testing.T) {
 	}
 	if strings.Contains(view, "$") {
 		t.Fatalf("the key list should not show money\n%s", view)
+	}
+	m.keys[0].LastClient = "phone"
+	if !strings.Contains(m.View(), "phone") {
+		t.Fatal("a client name should show next to the last address")
 	}
 	m.keys[0].Policy.CIDRs = []string{"10.0.0.0/8"}
 	m.keys[0].Exposure = nil
@@ -402,6 +411,89 @@ func TestDetailShowsUsage(t *testing.T) {
 		if !strings.Contains(view, want) {
 			t.Fatalf("missing %q\n%s", want, view)
 		}
+	}
+	if strings.Count(view, "127.0.0.1") < 2 {
+		t.Fatal("the requests box should show the client IP\n" + view)
+	}
+}
+
+func TestDetailShowsFifteenRecentRequests(t *testing.T) {
+	m := sample(&fakeAPI{})
+	m.overlay = overlayDetail
+	m.detailID = "abcd1234"
+	m.detailLoaded = true
+	m.width = 120
+	recent := make([]UsageRequest, 40)
+	for i := range recent {
+		recent[i] = UsageRequest{
+			IP: "203.0.113.8", Status: 200, Operation: "POST /v1/chat/completions",
+			Model: fmt.Sprintf("model-%02d", i),
+		}
+	}
+	recent[0].ClientName = "laptop"
+	m.detailUsage = KeyUsage{
+		Requests: len(recent),
+		Clients:  []UsageClient{{IP: "203.0.113.8", Name: "laptop", Requests: len(recent)}},
+		Recent:   recent,
+	}
+	view := m.View()
+	if !strings.Contains(view, "15 recent") || !strings.Contains(view, "model-00") || !strings.Contains(view, "model-14") {
+		t.Fatal(view)
+	}
+	if strings.Contains(view, "model-15") {
+		t.Fatal("the view should stop at 15 requests\n" + view)
+	}
+	if strings.Count(view, "203.0.113.8") < 16 || !strings.Contains(view, "laptop") {
+		t.Fatal(view)
+	}
+}
+
+func TestDetailRenamesClient(t *testing.T) {
+	f := &fakeAPI{}
+	m := sample(f)
+	m.overlay = overlayDetail
+	m.detailID = "abcd1234"
+	m.detailLoaded = true
+	m.detailUsage = KeyUsage{
+		Requests: 2,
+		Clients: []UsageClient{
+			{IP: "203.0.113.8", Requests: 2},
+			{IP: "127.0.0.1", Requests: 1},
+		},
+		Recent: []UsageRequest{
+			{IP: "203.0.113.8", Status: 200, Operation: "POST /v1/chat/completions", Model: "gpt-4o-mini"},
+			{IP: "127.0.0.1", Status: 200, Operation: "POST /v1/chat/completions", Model: "gpt-4o-mini"},
+		},
+	}
+	m, _ = press(m, "n")
+	if m.overlay != overlayClient || !strings.Contains(m.View(), "unnamed") {
+		t.Fatal(m.View())
+	}
+	m, _ = press(m, "j")
+	m, cmd := press(m, "enter")
+	if !m.clientEditing || cmd == nil {
+		t.Fatal("expected the name field")
+	}
+	m = typeText(m, "loopback")
+	m, cmd = press(m, "enter")
+	if cmd == nil {
+		t.Fatal("save")
+	}
+	next, _ := m.Update(cmd())
+	m = next.(model)
+	if len(f.clientNames) != 1 || f.clientNames[0].ip != "127.0.0.1" || f.clientNames[0].name != "loopback" {
+		t.Fatalf("%+v", f.clientNames)
+	}
+	if m.overlay != overlayClient || m.clientEditing {
+		t.Fatalf("overlay %d editing %v", m.overlay, m.clientEditing)
+	}
+	m, _ = press(m, "esc")
+	if m.overlay != overlayDetail {
+		t.Fatal("esc should return to the key")
+	}
+	view := m.View()
+	if !strings.Contains(view, "loopback") || strings.Count(view, "127.0.0.1") < 2 {
+		t.Fatal(view)
 	}
 }
 
@@ -659,9 +751,39 @@ func TestAdminTokenRequiredAndRetried(t *testing.T) {
 	}
 }
 
-func TestFmtTimeUTC(t *testing.T) {
-	got := fmtTime(time.Date(2026, 10, 27, 15, 4, 0, 0, time.FixedZone("local", -7*3600)))
+func TestFmtTimeUsesDetectedZone(t *testing.T) {
+	prev := timeZone
+	t.Cleanup(func() { timeZone = prev })
+
+	timeZone = func() *time.Location { return time.FixedZone("PDT", -7*3600) }
+	got := fmtTime(time.Date(2026, 10, 27, 22, 4, 0, 0, time.UTC))
+	if got != "2026-10-27 15:04 PDT" {
+		t.Fatal(got)
+	}
+	event := time.Date(2026, 10, 28, 2, 0, 0, 0, time.UTC)
+	now := time.Date(2026, 10, 28, 12, 0, 0, 0, time.FixedZone("PDT", -7*3600))
+	if got := shortTime(event, now); got != "10-27 19:00" {
+		t.Fatal(got)
+	}
+	sameDay := time.Date(2026, 10, 28, 18, 30, 0, 0, time.UTC)
+	if got := shortTime(sameDay, now); got != "11:30" {
+		t.Fatal(got)
+	}
+
+	timeZone = func() *time.Location { return time.UTC }
+	got = fmtTime(time.Date(2026, 10, 27, 15, 4, 0, 0, time.FixedZone("local", -7*3600)))
 	if got != "2026-10-27 22:04 UTC" {
+		t.Fatal(got)
+	}
+	if zoneFrom(nil) != time.UTC || zoneFrom(time.UTC) != time.UTC {
+		t.Fatal("a missing zone should stay UTC")
+	}
+	loc := time.FixedZone("Local", -7*3600)
+	if zoneFrom(loc) != loc {
+		t.Fatal("a detected zone should be kept")
+	}
+	off := time.Date(2026, 10, 28, 12, 0, 0, 0, time.FixedZone("+0530", 5*3600+30*60))
+	if got := zoneLabel(off); got != "+05:30" {
 		t.Fatal(got)
 	}
 }

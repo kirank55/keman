@@ -62,4 +62,51 @@ func TestKeyUsageGroupsClients(t *testing.T) {
 	if len(got.Models) != 1 || got.Models[0].Model != "openai/gpt-4o-mini" || got.Models[0].Requests != 2 {
 		t.Fatalf("%+v", got.Models)
 	}
+	if err := s.SetClientName(ctx, "203.0.113.8", "office"); err != nil {
+		t.Fatal(err)
+	}
+	got, err = s.KeyUsage(ctx, "k", 12)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Clients[0].Name != "office" || got.Recent[0].ClientName != "office" || got.Recent[1].ClientName != "" {
+		t.Fatalf("%+v %+v", got.Clients, got.Recent)
+	}
+	if err := s.SetClientName(ctx, "203.0.113.8", ""); err != nil {
+		t.Fatal(err)
+	}
+	got, err = s.KeyUsage(ctx, "k", 12)
+	if err != nil || got.Clients[0].Name != "" {
+		t.Fatalf("%q %v", got.Clients[0].Name, err)
+	}
+}
+
+func TestKeyUsageRecentLimit(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "keman.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	base := time.Date(2026, 10, 27, 12, 0, 0, 0, time.UTC)
+	for i := 0; i < 20; i++ {
+		ev := model.Event{
+			Time: base.Add(time.Duration(i) * time.Minute), KeyID: "k", Kind: model.KindStandard,
+			IP: "127.0.0.1", Operation: "GET /v1/models", Status: 200, Profile: "openai",
+		}
+		if err := s.InsertEvent(ctx, ev); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := s.KeyUsage(ctx, "k", UsageListLimit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Requests != 20 || len(got.Recent) != UsageListLimit {
+		t.Fatalf("total %d recent %d", got.Requests, len(got.Recent))
+	}
+	want := base.Add(19 * time.Minute)
+	if !got.Recent[0].Time.Equal(want) {
+		t.Fatalf("newest %v want %v", got.Recent[0].Time, want)
+	}
 }

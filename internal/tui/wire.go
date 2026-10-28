@@ -21,6 +21,7 @@ type keyWire struct {
 	CreatedAt     time.Time   `json:"created_at"`
 	LastSeen      *time.Time  `json:"last_seen_at"`
 	LastIP        string      `json:"last_ip"`
+	LastClient    string      `json:"last_client_name"`
 	LastCountry   string      `json:"last_country"`
 	Detections7d  int         `json:"detections_7d"`
 	Exposure      []struct {
@@ -47,7 +48,7 @@ func (w keyWire) toKey() Key {
 		ID: w.ID, Name: w.Name, CredentialID: w.CredentialID, Kind: w.Kind, Status: w.Status,
 		ExpiresAt: w.ExpiresAt, DryRunArmed: w.DryRunArmed, DryRunBlocked: w.DryRunBlocked,
 		SpendToday: w.SpendToday, SpendMonth: w.SpendMonth, SpendOpen: w.SpendOpen,
-		CreatedAt: w.CreatedAt, LastIP: w.LastIP, LastCountry: w.LastCountry, Detections7d: w.Detections7d,
+		CreatedAt: w.CreatedAt, LastIP: w.LastIP, LastClient: w.LastClient, LastCountry: w.LastCountry, Detections7d: w.Detections7d,
 	}
 	if w.LastSeen != nil {
 		k.LastSeen = *w.LastSeen
@@ -81,6 +82,7 @@ type usageWire struct {
 	LastSeen   *time.Time `json:"last_seen"`
 	Clients    []struct {
 		IP       string    `json:"ip"`
+		Name     string    `json:"name"`
 		Country  string    `json:"country"`
 		ASN      int       `json:"asn"`
 		Requests int       `json:"requests"`
@@ -108,6 +110,7 @@ type usageWire struct {
 		CostMicro     *int64    `json:"cost_microusd"`
 		CostEstimated bool      `json:"cost_estimated"`
 		BlockedCode   string    `json:"blocked_code"`
+		ClientName    string    `json:"client_name"`
 	} `json:"recent"`
 }
 
@@ -123,7 +126,7 @@ func (w usageWire) toUsage() KeyUsage {
 	}
 	for _, c := range w.Clients {
 		u.Clients = append(u.Clients, UsageClient{
-			IP: c.IP, Country: c.Country, ASN: c.ASN, Requests: c.Requests, LastSeen: c.LastSeen,
+			IP: c.IP, Name: c.Name, Country: c.Country, ASN: c.ASN, Requests: c.Requests, LastSeen: c.LastSeen,
 		})
 	}
 	for _, m := range w.Models {
@@ -137,7 +140,7 @@ func (w usageWire) toUsage() KeyUsage {
 			Time: r.Time, IP: r.IP, Country: r.Country, ASN: r.ASN, Operation: r.Operation,
 			Status: r.Status, LatencyMS: r.LatencyMS, Model: r.Model, TokensIn: r.TokensIn,
 			TokensOut: r.TokensOut, CostMicro: r.CostMicro, CostEstimated: r.CostEstimated,
-			BlockedCode: r.BlockedCode,
+			BlockedCode: r.BlockedCode, ClientName: r.ClientName,
 		})
 	}
 	return u
