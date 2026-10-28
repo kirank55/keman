@@ -203,6 +203,10 @@ A canary key returns a 401 shaped like its upstream profile's own error, not a `
 - The `dry_run` mode runs the same logic but only records when the key would have been disabled and how many requests would have been blocked.
 - Switching a key to `auto_disable` prints its dry-run report from the last 7 days and asks for confirmation, unless `--yes` is passed.
 
+**Trying the rules**
+
+`keman detection test` replays built-in scenarios through the engine and prints each alert, and whether auto-disable and dry-run would trip. It runs locally: it does not start the proxy, deliver alerts, or change a key. `keman detection test --file events.jsonl` replays a JSON array or JSONL of events. `--learned` seeds a baseline past the learning period first.
+
 ## Targets
 
 | Metric | Target |
@@ -218,7 +222,7 @@ Publish the benchmark in the repo.
 - OpenAI, Anthropic and one generic HTTP API work through one binary, including streaming with the official Python and Node SDKs.
 - Revoking a key blocks its next request.
 - Any use of a canary key sends a critical alert within 5 seconds.
-- A replayed attack against a key with a seeded baseline fires the expected alerts and auto-disables the key. Dry-run mode reports the same result. The test suite includes the injectable clock and a fixture loader for past events.
+- A replayed attack against a key with a seeded baseline fires the expected alerts and auto-disables the key. Dry-run mode reports the same result. The test suite includes the injectable clock and a fixture loader for past events. `keman detection test` runs that replay from the CLI.
 - Restarting the proxy does not reset spend caps.
 - An `X-Forwarded-For` header from an untrusted peer is ignored.
 - Fuzz tests cover key parsing, header handling and path matching.
