@@ -6,11 +6,12 @@ To make them again after a UI change, from the repo root:
 
 ```sh
 docs/media/src/capture.sh                       # seeds .demo/, captures into .demo/shots (needs tmux)
-python3 docs/media/src/build.py .demo/shots FONTS .demo/gallery-html
-node docs/media/src/render.mjs .demo/gallery-html docs/media/producthunt   # needs: npm i playwright
+python3 docs/media/src/build.py .demo/shots .media-cache/fonts .demo/gallery-html
+mkdir -p .media-cache/render && cp docs/media/src/render.mjs .media-cache/render/ && (cd .media-cache/render && npm i playwright)
+node .media-cache/render/render.mjs .demo/gallery-html docs/media/producthunt
 ```
 
-`FONTS` is a directory with `JetBrainsMono-Regular.woff2` and `JetBrainsMono-Bold.woff2` ([JetBrains Mono](https://github.com/JetBrains/JetBrainsMono/releases)) and `InterVariable.woff2` ([Inter](https://github.com/rsms/inter/releases)). Both are under the SIL Open Font License.
+`.media-cache/fonts` must hold `JetBrainsMono-Regular.woff2` and `JetBrainsMono-Bold.woff2` ([JetBrains Mono](https://github.com/JetBrains/JetBrainsMono/releases)) and `InterVariable.woff2` ([Inter](https://github.com/rsms/inter/releases)). Both are under the SIL Open Font License.
 
 | File | Shows |
 | --- | --- |
