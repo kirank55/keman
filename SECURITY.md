@@ -31,4 +31,4 @@ See [docs/THREAT-MODEL.md](docs/THREAT-MODEL.md) and [docs/ASSUMPTIONS.md](docs/
 
 ## Releases
 
-The release workflow in `.github/workflows/release.yml` is a scaffold for a static binary, a Syft SPDX SBOM, and a keyless cosign signature. No signed release or SBOM has been published yet.
+The release workflow in `.github/workflows/release.yml` builds a static binary, an SPDX SBOM of that binary (Syft), a SHA-256 sum, and a keyless cosign signature, then publishes one GitHub Release. No signed release has been published yet; pushing a `v*` tag is what runs it.

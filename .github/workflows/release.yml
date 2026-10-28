@@ -1,10 +1,6 @@
-# Scaffold only. This workflow has not been executed in the beta build
-# environment, and no signed release or SBOM has been published.
-#
-# It expects a GitHub Actions environment that can:
-#   - push a GitHub release
-#   - use keyless cosign (id-token: write) against the public Rekor log
-#   - install syft to attach an SPDX SBOM
+# Build a static binary per OS/arch, attach an SPDX SBOM (Syft) and a
+# keyless cosign bundle, then publish one GitHub release. This workflow
+# has not been used to publish a signed release yet; tagging v* will.
 name: release
 
 on:
@@ -16,9 +12,10 @@ permissions:
   id-token: write
 
 jobs:
-  release:
+  build:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         include:
           - goos: linux
@@ -37,19 +34,34 @@ jobs:
           CGO_ENABLED: "0"
         run: |
           mkdir -p dist
-          go build -trimpath -ldflags="-s -w" -o dist/keman_${{ matrix.goos }}_${{ matrix.goarch }} ./cmd/keman
+          go build -trimpath -ldflags="-s -w -X github.com/kirank55/keman/internal/cli.Version=${GITHUB_REF_NAME}" -o dist/keman_${{ matrix.goos }}_${{ matrix.goarch }} ./cmd/keman
+          sha256sum dist/keman_${{ matrix.goos }}_${{ matrix.goarch }} | tee dist/keman_${{ matrix.goos }}_${{ matrix.goarch }}.sha256
       - name: SBOM
         uses: anchore/sbom-action@v0
         with:
-          artifact: dist/keman_${{ matrix.goos }}_${{ matrix.goarch }}
+          file: dist/keman_${{ matrix.goos }}_${{ matrix.goarch }}
           format: spdx-json
           output-file: dist/keman_${{ matrix.goos }}_${{ matrix.goarch }}.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - uses: sigstore/cosign-installer@v3
       - name: Sign
-        uses: sigstore/cosign-installer@v3
-      - run: cosign sign-blob --yes dist/keman_${{ matrix.goos }}_${{ matrix.goarch }} --bundle dist/keman_${{ matrix.goos }}_${{ matrix.goarch }}.bundle
+        run: cosign sign-blob --yes --bundle dist/keman_${{ matrix.goos }}_${{ matrix.goarch }}.bundle dist/keman_${{ matrix.goos }}_${{ matrix.goarch }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: keman-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
       - uses: softprops/action-gh-release@v2
         with:
-          files: |
-            dist/keman_${{ matrix.goos }}_${{ matrix.goarch }}
-            dist/keman_${{ matrix.goos }}_${{ matrix.goarch }}.spdx.json
-            dist/keman_${{ matrix.goos }}_${{ matrix.goarch }}.bundle
+          files: dist/*
+          fail_on_unmatched_files: true

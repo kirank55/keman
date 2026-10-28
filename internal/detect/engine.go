@@ -6,6 +6,7 @@ package detect
 import (
 	"bytes"
 	"encoding/json"
+	"net"
 	"sort"
 	"sync"
 	"time"
@@ -213,15 +214,15 @@ func (e *Engine) Observe(ev model.Event) Outcome {
 	switch {
 	case ev.Kind == model.KindCanary:
 		e.add(&out, st, ev, RuleCanary, SevCritical, map[string]any{"count": 1})
-	case ev.BlockedCode == "key_disabled" || ev.BlockedCode == "key_revoked":
+	case ev.BlockedCode == "key_disabled" || ev.BlockedCode == "key_revoked" || ev.BlockedCode == "key_expired":
 		e.add(&out, st, ev, RuleDisabled, SevHigh, map[string]any{
 			"status": ev.BlockedCode,
 			"ip":     ev.IP,
 		})
 	default:
 		e.rules(&out, st, ev)
+		e.auto(&out, st, ev)
 	}
-	e.auto(&out, st, ev)
 	out.Baseline = e.snapshot(ev.KeyID, st)
 	return out
 }
@@ -532,13 +533,21 @@ func isAllowlist(code string) bool {
 func Commands(keyID, ip, country string) []string {
 	cmds := []string{"keman key disable " + keyID}
 	if ip != "" {
-		cmds = append(cmds, "keman policy set "+keyID+" --cidr "+ip+"/32")
+		cmds = append(cmds, "keman policy set "+keyID+" --cidr "+hostCIDR(ip))
 	}
 	if country != "" {
 		cmds = append(cmds, "keman policy set "+keyID+" --country "+country)
 	}
 	cmds = append(cmds, "keman policy set "+keyID+" --daily-usd 1")
 	return cmds
+}
+
+func hostCIDR(ip string) string {
+	parsed := net.ParseIP(ip)
+	if parsed != nil && parsed.To4() == nil {
+		return ip + "/128"
+	}
+	return ip + "/32"
 }
 
 type fixture struct {

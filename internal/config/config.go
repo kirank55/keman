@@ -4,7 +4,10 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -254,16 +257,140 @@ func splitComma(s string) []string {
 	return out
 }
 
-// WriteDefault creates a config file if it does not already exist.
+// WriteDefault creates a config file of Defaults() if it does not already exist.
 func WriteDefault(path string) error {
-	if _, err := os.Stat(path); err == nil {
+	return WriteIfAbsent(path, Defaults())
+}
+
+// WriteIfAbsent writes cfg when path does not exist. The file records the
+// effective settings (including environment overrides) so serve can reuse it.
+func WriteIfAbsent(path string, cfg Config) error {
+	if path == "" {
 		return nil
 	}
-	cfg := Defaults()
-	b, err := yaml.Marshal(cfg)
+	if _, err := os.Stat(path); err == nil {
+		return nil
+	} else if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if dir := filepath.Dir(path); dir != "" && dir != "." {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return err
+		}
+	}
+	b, err := Encode(cfg)
 	if err != nil {
 		return err
 	}
-	header := []byte("# Keman server settings. Keys and policies live in the database.\n")
-	return os.WriteFile(path, append(header, b...), 0o600)
+	return os.WriteFile(path, b, 0o600)
+}
+
+// Encode renders a readable YAML config.
+func Encode(cfg Config) ([]byte, error) {
+	if cfg.ProxyListen == "" {
+		cfg.ProxyListen = Defaults().ProxyListen
+	}
+	if cfg.AdminListen == "" {
+		cfg.AdminListen = Defaults().AdminListen
+	}
+	if cfg.Database == "" {
+		cfg.Database = Defaults().Database
+	}
+	var b strings.Builder
+	b.WriteString("# Keman server settings. Keys and policies live in the database.\n")
+	fmt.Fprintf(&b, "proxy_listen: %s\n", cfg.ProxyListen)
+	fmt.Fprintf(&b, "admin_listen: %s\n", cfg.AdminListen)
+	fmt.Fprintf(&b, "database: %s\n", cfg.Database)
+	if len(cfg.TrustedProxies) == 0 {
+		b.WriteString("trusted_proxies: []\n")
+	} else {
+		b.WriteString("trusted_proxies:\n")
+		for _, p := range cfg.TrustedProxies {
+			fmt.Fprintf(&b, "  - %s\n", p)
+		}
+	}
+	if cfg.GeoIPCountryDB != "" {
+		fmt.Fprintf(&b, "geoip_country_db: %s\n", cfg.GeoIPCountryDB)
+	}
+	if cfg.GeoIPASNDB != "" {
+		fmt.Fprintf(&b, "geoip_asn_db: %s\n", cfg.GeoIPASNDB)
+	}
+	if cfg.PricesFile != "" {
+		fmt.Fprintf(&b, "prices_file: %s\n", cfg.PricesFile)
+	}
+	if cfg.MasterKeyFile != "" {
+		fmt.Fprintf(&b, "master_key_file: %s\n", cfg.MasterKeyFile)
+	}
+	fmt.Fprintf(&b, "default_reservation_microusd: %d\n", cfg.DefaultReservation)
+	fmt.Fprintf(&b, "event_queue_size: %d\n", cfg.EventQueueSize)
+	fmt.Fprintf(&b, "event_retention: %s\n", formatDuration(cfg.EventRetention))
+	fmt.Fprintf(&b, "detection_retention: %s\n", formatDuration(cfg.DetectionRetention))
+	fmt.Fprintf(&b, "spend_flush_interval: %s\n", formatDuration(cfg.SpendFlushInterval))
+	fmt.Fprintf(&b, "spend_fail_closed_after: %s\n", formatDuration(cfg.SpendFailClosedAfter))
+	fmt.Fprintf(&b, "max_request_body_bytes: %d\n", cfg.MaxRequestBodyBytes)
+	fmt.Fprintf(&b, "max_header_bytes: %d\n", cfg.MaxHeaderBytes)
+	fmt.Fprintf(&b, "read_header_timeout: %s\n", formatDuration(cfg.ReadHeaderTimeout))
+	fmt.Fprintf(&b, "upstream_dial_timeout: %s\n", formatDuration(cfg.UpstreamDialTimeout))
+	fmt.Fprintf(&b, "upstream_response_header_timeout: %s\n", formatDuration(cfg.UpstreamHeaderTimeout))
+	fmt.Fprintf(&b, "invalid_key_rpm: %d\n", cfg.InvalidKeyRPM)
+	return []byte(b.String()), nil
+}
+
+func formatDuration(d time.Duration) string {
+	if d == 0 {
+		return "0s"
+	}
+	if d%time.Hour == 0 {
+		return strconv.FormatInt(int64(d/time.Hour), 10) + "h"
+	}
+	if d%time.Minute == 0 {
+		return strconv.FormatInt(int64(d/time.Minute), 10) + "m"
+	}
+	if d%time.Second == 0 {
+		return strconv.FormatInt(int64(d/time.Second), 10) + "s"
+	}
+	return d.String()
+}
+
+// AdminURL is the HTTP URL the CLI should use for cfg.AdminListen.
+// 0.0.0.0 and :: are rewritten to 127.0.0.1 so the client can connect.
+func AdminURL(cfg Config) string {
+	addr := cfg.AdminListen
+	if addr == "" {
+		addr = Defaults().AdminListen
+	}
+	if strings.HasPrefix(addr, "unix://") {
+		return addr
+	}
+	if strings.HasPrefix(addr, "/") {
+		return "unix://" + addr
+	}
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return "http://127.0.0.1:8081"
+	}
+	if host == "0.0.0.0" || host == "::" || host == "[::]" || host == "" {
+		host = "127.0.0.1"
+	}
+	return "http://" + net.JoinHostPort(host, port)
+}
+
+// AdminIsLocal is true when the admin listener is loopback or a Unix socket.
+func AdminIsLocal(cfg Config) bool {
+	addr := cfg.AdminListen
+	if addr == "" {
+		return true
+	}
+	if strings.HasPrefix(addr, "unix://") || strings.HasPrefix(addr, "/") {
+		return true
+	}
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }

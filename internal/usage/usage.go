@@ -28,17 +28,21 @@ type Result struct {
 }
 
 func (d usageDTO) present() bool {
-	return d.PromptTokens != nil || d.CompletionTokens != nil || d.InputTokens != nil || d.OutputTokens != nil || d.CacheRead != nil || d.CacheCreation != nil
+	return d.PromptTokens != nil || d.CompletionTokens != nil || d.InputTokens != nil || d.OutputTokens != nil || d.CacheRead != nil || d.CacheCreation != nil || d.CacheCreationDetail != nil
 }
 
 type usageDTO struct {
-	PromptTokens     *int64 `json:"prompt_tokens"`
-	CompletionTokens *int64 `json:"completion_tokens"`
-	InputTokens      *int64 `json:"input_tokens"`
-	OutputTokens     *int64 `json:"output_tokens"`
-	CacheRead        *int64 `json:"cache_read_input_tokens"`
-	CacheCreation    *int64 `json:"cache_creation_input_tokens"`
-	PromptDetails    *struct {
+	PromptTokens        *int64 `json:"prompt_tokens"`
+	CompletionTokens    *int64 `json:"completion_tokens"`
+	InputTokens         *int64 `json:"input_tokens"`
+	OutputTokens        *int64 `json:"output_tokens"`
+	CacheRead           *int64 `json:"cache_read_input_tokens"`
+	CacheCreation       *int64 `json:"cache_creation_input_tokens"`
+	CacheCreationDetail *struct {
+		Ephemeral5m *int64 `json:"ephemeral_5m_input_tokens"`
+		Ephemeral1h *int64 `json:"ephemeral_1h_input_tokens"`
+	} `json:"cache_creation"`
+	PromptDetails *struct {
 		CachedTokens *int64 `json:"cached_tokens"`
 	} `json:"prompt_tokens_details"`
 	InputDetails *struct {
@@ -347,6 +351,9 @@ func (s *Scanner) absorb(raw []byte) {
 	if dto.CacheCreation != nil {
 		s.merged.CacheCreation = dto.CacheCreation
 	}
+	if dto.CacheCreationDetail != nil {
+		s.merged.CacheCreationDetail = dto.CacheCreationDetail
+	}
 	if dto.PromptDetails != nil && dto.PromptDetails.CachedTokens != nil {
 		s.merged.PromptDetails = dto.PromptDetails
 	}
@@ -382,6 +389,13 @@ func (s *Scanner) Finish() Result {
 		}
 		if d.CacheCreation != nil {
 			r.CacheWrite = *d.CacheCreation
+		} else if d.CacheCreationDetail != nil {
+			if d.CacheCreationDetail.Ephemeral5m != nil {
+				r.CacheWrite += *d.CacheCreationDetail.Ephemeral5m
+			}
+			if d.CacheCreationDetail.Ephemeral1h != nil {
+				r.CacheWrite += *d.CacheCreationDetail.Ephemeral1h
+			}
 		}
 		r.InputIncludesCached = false
 		return r

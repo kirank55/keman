@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -25,9 +26,11 @@ import (
 	"github.com/kirank55/keman/internal/cryptoenc"
 	"github.com/kirank55/keman/internal/detect"
 	"github.com/kirank55/keman/internal/geoip"
+	"github.com/kirank55/keman/internal/headers"
 	"github.com/kirank55/keman/internal/keyfmt"
 	"github.com/kirank55/keman/internal/metrics"
 	"github.com/kirank55/keman/internal/model"
+	"github.com/kirank55/keman/internal/pathmatch"
 	"github.com/kirank55/keman/internal/pipeline"
 	"github.com/kirank55/keman/internal/price"
 	"github.com/kirank55/keman/internal/proxy"
@@ -41,6 +44,11 @@ import (
 func Init(ctx context.Context, cfg config.Config, master []byte) (string, error) {
 	if len(master) != cryptoenc.KeySize {
 		return "", fmt.Errorf("master key must be 32 bytes")
+	}
+	if dir := filepath.Dir(cfg.Database); dir != "" && dir != "." {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return "", err
+		}
 	}
 	st, err := store.Open(cfg.Database)
 	if err != nil {
@@ -131,6 +139,12 @@ func Open(ctx context.Context, cfg config.Config, master []byte, opts ...Option)
 	if log == nil {
 		log = slog.New(redact.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}), secrets))
 	}
+	if _, err := os.Stat(cfg.Database); err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("database is not initialized; run keman init")
+		}
+		return nil, err
+	}
 	st, err := store.Open(cfg.Database)
 	if err != nil {
 		return nil, err
@@ -198,7 +212,8 @@ func Open(ctx context.Context, cfg config.Config, master []byte, opts ...Option)
 		OnStatus: func(id, status string, paused time.Time) {
 			eng.NoteStatus(id, status, paused)
 		},
-		Log: log,
+		OnSecret: secrets.Add,
+		Log:      log,
 	}
 	px := &proxy.Proxy{
 		State: mem, Clock: b.clock, Prices: prices, Queue: a.queue, Geo: geo, Trusted: trusted,
@@ -228,6 +243,11 @@ func (a *App) load(ctx context.Context, geo geoip.Resolver) error {
 		return err
 	}
 	for _, u := range ups {
+		if len(u.PathAllowlist) > 0 {
+			if _, err := pathmatch.ParseList(strings.Join(u.PathAllowlist, "\n")); err != nil {
+				return fmt.Errorf("upstream %s has an invalid path allowlist: %w", u.Name, err)
+			}
+		}
 		a.state.PutUpstream(u)
 	}
 	creds, err := a.store.ListCredentials(ctx)
@@ -240,6 +260,11 @@ func (a *App) load(ctx context.Context, geo geoip.Resolver) error {
 			return fmt.Errorf("decrypt credential %s: %w", c.ID, err)
 		}
 		c.Plaintext = string(plain)
+		if c.AuthStyle == model.AuthHeader || c.AuthStyle == "" {
+			if headers.TemplateHeaderName(c.HeaderTemplate) == "" {
+				return fmt.Errorf("credential %s has an invalid header template", c.Name)
+			}
+		}
 		a.secrets.Add(c.Plaintext)
 		a.state.PutCredential(c)
 	}
@@ -535,7 +560,7 @@ func (a *App) AdminURL() string {
 		return ""
 	}
 	if a.adminLn.Addr().Network() == "unix" {
-		return "http://keman"
+		return "unix://" + a.adminLn.Addr().String()
 	}
 	return "http://" + a.adminLn.Addr().String()
 }

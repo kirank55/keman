@@ -13,6 +13,7 @@ import (
 	"github.com/kirank55/keman/internal/clock"
 	"github.com/kirank55/keman/internal/keyfmt"
 	"github.com/kirank55/keman/internal/model"
+	"github.com/kirank55/keman/internal/money"
 	"github.com/kirank55/keman/internal/pathmatch"
 )
 
@@ -349,18 +350,18 @@ func (s *State) Reserve(id string, amount int64, now time.Time) bool {
 	}
 	p := s.policies[id]
 	open := s.open[id]
-	if p.DailyCapMicro != nil {
-		if s.committed(id, DayPeriod(now))+open+amount > *p.DailyCapMicro {
-			return false
-		}
+	if p.DailyCapMicro != nil && exceedsCap(s.committed(id, DayPeriod(now)), open, amount, *p.DailyCapMicro) {
+		return false
 	}
-	if p.MonthlyCapMicro != nil {
-		if s.committed(id, MonthPeriod(now))+open+amount > *p.MonthlyCapMicro {
-			return false
-		}
+	if p.MonthlyCapMicro != nil && exceedsCap(s.committed(id, MonthPeriod(now)), open, amount, *p.MonthlyCapMicro) {
+		return false
 	}
-	s.open[id] = open + amount
+	s.open[id] = money.Add(open, amount)
 	return true
+}
+
+func exceedsCap(committed, open, amount, cap int64) bool {
+	return money.Add(money.Add(committed, open), amount) > cap
 }
 
 func (s *State) committed(id, period string) int64 {
@@ -395,7 +396,7 @@ func (s *State) Release(id string, reservation int64) {
 func (s *State) add(id, period string, micro int64) {
 	k := spendKey{id, period}
 	cur := s.spend[k]
-	cur.micro += micro
+	cur.micro = money.Add(cur.micro, micro)
 	cur.dirty = true
 	s.spend[k] = cur
 }

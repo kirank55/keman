@@ -93,9 +93,6 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	key, ok := p.State.Match(id, secret)
 	if !ok {
-		if p.Secrets != nil {
-			p.Secrets.Add(secret)
-		}
 		p.rejectUnauth(w, r, ipStr, start, "invalid_key")
 		return
 	}
@@ -292,8 +289,11 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				if !hasCap {
 					return
 				}
+				if evBase.BlockedCode != "" || isRedirect(evBase.Status) {
+					return
+				}
 				if !result.Saw {
-					p.State.Reconcile(key.ID, reservation, reservation, p.now())
+					p.State.Reconcile(key.ID, reservation, reservation, start)
 					settled = true
 					return
 				}
@@ -303,11 +303,11 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					cost, ok = p.Prices.Cost(meta.Model, result.Input, result.Output, result.Cached, result.CacheWrite, result.InputIncludesCached)
 				}
 				if !ok {
-					p.State.Reconcile(key.ID, reservation, reservation, p.now())
+					p.State.Reconcile(key.ID, reservation, reservation, start)
 					settled = true
 					return
 				}
-				p.State.Reconcile(key.ID, reservation, cost, p.now())
+				p.State.Reconcile(key.ID, reservation, cost, start)
 				settled = true
 			}}
 			return nil
@@ -339,9 +339,9 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				evBase.CostMicro = &cost
 			}
 		}
-	} else if hasCap && reservation > 0 && evBase.BlockedCode == "" {
+	} else if hasCap && reservation > 0 && evBase.BlockedCode == "" && !isRedirect(evBase.Status) {
 		if !settled {
-			p.State.Reconcile(key.ID, reservation, reservation, p.now())
+			p.State.Reconcile(key.ID, reservation, reservation, start)
 			settled = true
 		}
 		c := reservation
@@ -494,11 +494,17 @@ func readLimited(body io.Reader, max int64) ([]byte, error) {
 func upRules(up model.Upstream) []pathmatch.Rule {
 	if len(up.PathAllowlist) > 0 {
 		rules, err := pathmatch.ParseList(strings.Join(up.PathAllowlist, "\n"))
-		if err == nil {
-			return rules
+		if err != nil {
+			// Fail closed: a corrupt list must not restore the built-in allowlist.
+			return nil
 		}
+		return rules
 	}
 	return profile.Builtin(up.Profile)
+}
+
+func isRedirect(status int) bool {
+	return status >= 300 && status < 400
 }
 
 func upstreamURL(up model.Upstream) *url.URL {
@@ -522,7 +528,10 @@ func applyAuth(out *http.Request, cred model.Credential) {
 		}
 		out.Header.Set("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(user+":"+pass)))
 	default:
-		_ = headers.ApplyTemplate(out.Header, cred.HeaderTemplate, cred.Plaintext)
+		if err := headers.ApplyTemplate(out.Header, cred.HeaderTemplate, cred.Plaintext); err != nil {
+			out.Header.Del("Authorization")
+			out.Header.Del("X-Api-Key")
+		}
 	}
 }
 

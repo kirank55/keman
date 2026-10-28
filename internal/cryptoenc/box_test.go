@@ -49,3 +49,20 @@ func TestRoundTripAndRekey(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestParseMasterKeyKeepsBinaryTrailingSpace(t *testing.T) {
+	raw := bytes.Repeat([]byte{1}, 32)
+	raw[31] = ' '
+	got, err := ParseMasterKey(raw)
+	if err != nil || !bytes.Equal(got, raw) {
+		t.Fatalf("%v %q", err, got)
+	}
+	padded := append(append([]byte{}, raw...), '\n')
+	got, err = ParseMasterKey(padded)
+	if err != nil || !bytes.Equal(got, raw) {
+		t.Fatalf("newline-padded 32-byte key: %v %q", err, got)
+	}
+	if _, err := ParseMasterKey(raw[:31]); err == nil {
+		t.Fatal("31 bytes")
+	}
+}

@@ -52,7 +52,14 @@ type Service struct {
 	Rules      detect.Config
 	GeoCountry bool
 	OnStatus   func(id, status string, paused time.Time)
+	OnSecret   func(string)
 	Log        *slog.Logger
+}
+
+func (s *Service) noteSecret(secret string) {
+	if s.OnSecret != nil && secret != "" {
+		s.OnSecret(secret)
+	}
 }
 
 func (s *Service) now() time.Time {
@@ -72,6 +79,10 @@ func (s *Service) audit(ctx context.Context, actor, action, target, before, afte
 }
 
 func (s *Service) CreateUpstream(ctx context.Context, u model.Upstream, actor, ip string) (model.Upstream, error) {
+	u.Name = strings.TrimSpace(u.Name)
+	if u.Name == "" {
+		return model.Upstream{}, &OpError{Status: 400, Code: "invalid", Message: "Upstream name is required."}
+	}
 	if u.Protocol == "" {
 		u.Protocol = model.ProtocolHTTP
 	}
@@ -108,6 +119,10 @@ func (s *Service) CreateUpstream(ctx context.Context, u model.Upstream, actor, i
 }
 
 func (s *Service) CreateCredential(ctx context.Context, c model.Credential, secret, actor, ip string) (model.Credential, error) {
+	c.Name = strings.TrimSpace(c.Name)
+	if c.Name == "" {
+		return model.Credential{}, &OpError{Status: 400, Code: "invalid", Message: "Credential name is required."}
+	}
 	if secret == "" {
 		return model.Credential{}, &OpError{Status: 400, Code: "invalid", Message: "Credential secret is required."}
 	}
@@ -143,6 +158,7 @@ func (s *Service) CreateCredential(ctx context.Context, c model.Credential, secr
 		return model.Credential{}, conflict(err)
 	}
 	s.State.PutCredential(c)
+	s.noteSecret(secret)
 	s.audit(ctx, actor, "credential.create", c.ID, "", `{"last4":"`+c.Last4+`"}`, ip)
 	c.Plaintext = ""
 	c.Ciphertext = nil
@@ -174,6 +190,7 @@ func (s *Service) RotateCredential(ctx context.Context, id, secret, actor, ip st
 	cur.Plaintext = secret
 	cur.UpdatedAt = now
 	s.State.PutCredential(cur)
+	s.noteSecret(secret)
 	s.audit(ctx, actor, "credential.rotate", id, "", `{"last4":"`+cur.Last4+`"}`, ip)
 	cur.Plaintext = ""
 	cur.Ciphertext = nil
@@ -448,6 +465,7 @@ func (s *Service) AddAlert(ctx context.Context, kind, url, secret, actor, ip str
 	} else if err := s.Store.InsertAlert(ctx, a); err != nil {
 		return model.AlertDestination{}, err
 	}
+	s.noteSecret(secret)
 	s.audit(ctx, actor, "alert.create", id, "", kind, ip)
 	a.Secret = ""
 	return a, nil
@@ -498,7 +516,7 @@ func validHost(h string) bool {
 
 func last4(s string) string {
 	if len(s) <= 4 {
-		return s
+		return "****"
 	}
 	return s[len(s)-4:]
 }
@@ -653,7 +671,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if !decode(w, r, &req) {
 			return
 		}
-		// JSON uses different field names than the Go struct for caps. Decode into a wire struct.
 		p, report, err := h.Service.SetPolicy(r.Context(), id, req, actor, ip)
 		if err != nil {
 			write(w, nil, err)
@@ -750,10 +767,27 @@ func decode(w http.ResponseWriter, r *http.Request, dest any) bool {
 	dec := json.NewDecoder(io.LimitReader(r.Body, 1<<20))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(dest); err != nil {
-		apierr.Write(w, http.StatusBadRequest, "invalid", "The request body is not valid JSON.")
+		apierr.Write(w, http.StatusBadRequest, "invalid", decodeMessage(err))
 		return false
 	}
 	return true
+}
+
+func decodeMessage(err error) string {
+	if err == nil {
+		return "The request body is not valid JSON."
+	}
+	msg := err.Error()
+	switch {
+	case strings.Contains(msg, "unknown field"):
+		return "The request body has an unknown field. " + msg
+	default:
+		var typ *json.UnmarshalTypeError
+		if errors.As(err, &typ) {
+			return "The request body has a field of the wrong type (" + typ.Field + ")."
+		}
+		return "The request body is not valid JSON: " + msg
+	}
 }
 
 func write(w http.ResponseWriter, v any, err error) {
