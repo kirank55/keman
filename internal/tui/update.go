@@ -134,6 +134,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.errMsg = ""
 		m.errFromPoll = false
 		return m.onKey(msg)
+	case tea.MouseMsg:
+		return m.onMouse(msg)
 	case tickMsg:
 		next, fetch := m.afterTick()
 		return next, tea.Batch(scheduleTick(), fetch)
