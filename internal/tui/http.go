@@ -180,6 +180,14 @@ func (h *HTTP) KeyUsage(ctx context.Context, id string) (KeyUsage, error) {
 	return wire.toUsage(), nil
 }
 
+func (h *HTTP) SetClientName(ctx context.Context, ip, name string) error {
+	body := map[string]string{"ip": ip, "name": name}
+	if err := h.c.Call(ctx, http.MethodPut, "/v1/clients", body, nil); err != nil {
+		return explain(err, h.c.Base)
+	}
+	return nil
+}
+
 func (h *HTTP) AddUpstream(ctx context.Context, d UpstreamDraft) (Upstream, error) {
 	body := map[string]any{
 		"name": d.Name, "profile": d.Profile, "host": d.Host,

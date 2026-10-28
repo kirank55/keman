@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -25,6 +26,45 @@ func lifecycleService(t *testing.T, ttl time.Duration) (*Service, *clock.Fake) {
 	mem.PutUpstream(model.Upstream{ID: "up", Name: "openai", Profile: "openai", Host: "api.openai.com", Port: 443})
 	mem.PutCredential(model.Credential{ID: "cred", UpstreamID: "up", Name: "primary"})
 	return &Service{Store: st, State: mem, Clock: clk, DefaultTTL: ttl}, clk
+}
+
+func TestSetClientName(t *testing.T) {
+	svc, _ := lifecycleService(t, 0)
+	ctx := context.Background()
+	ip, name, err := svc.SetClientName(ctx, " 203.0.113.8 ", " office ", "admin", "127.0.0.1")
+	if err != nil || ip != "203.0.113.8" || name != "office" {
+		t.Fatalf("%s %s %v", ip, name, err)
+	}
+	got, err := svc.Store.ClientNames(ctx)
+	if err != nil || got["203.0.113.8"] != "office" {
+		t.Fatalf("%v %v", got, err)
+	}
+	if _, _, err := svc.SetClientName(ctx, "nope", "x", "admin", ""); err == nil {
+		t.Fatal("accepted a bad address")
+	}
+	if _, _, err := svc.SetClientName(ctx, "203.0.113.8", "bad\nname", "admin", ""); err == nil {
+		t.Fatal("accepted a control character")
+	}
+	if _, _, err := svc.SetClientName(ctx, "203.0.113.8", strings.Repeat("a", 33), "admin", ""); err == nil {
+		t.Fatal("accepted a long name")
+	}
+	if _, _, err := svc.SetClientName(ctx, "203.0.113.8", " ", "admin", ""); err != nil {
+		t.Fatal(err)
+	}
+	got, err = svc.Store.ClientNames(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := got["203.0.113.8"]; ok {
+		t.Fatalf("name not cleared: %v", got)
+	}
+	rows, err := svc.Store.ListAudit(ctx, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) < 2 || rows[0].Action != "client.name" || rows[0].Target != "203.0.113.8" {
+		t.Fatalf("%+v", rows)
+	}
 }
 
 func TestCreateKeyGetsDefaultExpiry(t *testing.T) {

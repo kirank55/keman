@@ -176,6 +176,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.loading = false
+		// A fetch started on the key can land after a name was saved.
+		// Keep the name on screen; the next refresh picks up the stored one.
+		if m.overlay == overlayClient && m.detailLoaded {
+			return m, nil
+		}
 		if msg.err != nil {
 			m.pollErr(msg.err)
 			return m, nil
@@ -183,6 +188,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.detailUsage = msg.usage
 		m.detailLoaded = true
 		m.clearPollErr()
+		return m, nil
+	case clientNamed:
+		m.loading = false
+		if msg.err != nil {
+			m.errMsg = errText(msg.err)
+			return m, nil
+		}
+		m.applyClientName(msg.ip, msg.name)
+		m.clientEditing = false
+		m.clientInput.Blur()
+		m.errMsg = ""
+		if msg.name == "" {
+			m.note = "cleared name for " + msg.ip
+		} else {
+			m.note = "named " + msg.ip + " " + msg.name
+		}
 		return m, nil
 	case auditLoaded:
 		if msg.gen != m.gen {
@@ -350,7 +371,7 @@ func (m model) afterTick() (model, tea.Cmd) {
 
 func (m model) busy() bool {
 	switch m.overlay {
-	case overlayPolicy, overlayRevoke, overlayRotate, overlayCreate, overlayUpstream, overlayCredential, overlayToken, overlayConfirm, overlayAdmin:
+	case overlayPolicy, overlayRevoke, overlayRotate, overlayCreate, overlayUpstream, overlayCredential, overlayToken, overlayConfirm, overlayAdmin, overlayClient:
 		return true
 	}
 	return m.filtering
@@ -401,6 +422,8 @@ func (m model) onKey(msg tea.KeyMsg) (model, tea.Cmd) {
 		return m.onCredential(msg)
 	case overlayAdmin:
 		return m.onAdmin(msg)
+	case overlayClient:
+		return m.onClient(msg)
 	case overlayDetail:
 		return m.onDetail(msg)
 	}
@@ -567,12 +590,101 @@ func (m model) onDetail(msg tea.KeyMsg) (model, tea.Cmd) {
 		return m.openRotate(), nil
 	case "p":
 		return m.openPolicy()
+	case "n":
+		return m.openClient()
 	case "?":
 		m.helpFrom = overlayDetail
 		m.overlay = overlayHelp
 		return m, nil
 	default:
 		return m, nil
+	}
+}
+
+func (m model) openClient() (model, tea.Cmd) {
+	if !m.detailLoaded {
+		m.errMsg = "still loading"
+		return m, nil
+	}
+	if len(m.clientRows()) == 0 {
+		m.errMsg = "no clients on this key yet"
+		return m, nil
+	}
+	m.clientCursor = 0
+	m.clientEditing = false
+	m.clientInput.Blur()
+	m.overlay = overlayClient
+	m.scroll = 0
+	m.errMsg = ""
+	return m, nil
+}
+
+func (m model) onClient(msg tea.KeyMsg) (model, tea.Cmd) {
+	rows := m.clientRows()
+	if m.clientEditing {
+		switch msg.String() {
+		case "esc":
+			m.clientEditing = false
+			m.clientInput.Blur()
+			return m, nil
+		case "enter":
+			return m.saveClientName()
+		default:
+			var cmd tea.Cmd
+			m.clientInput, cmd = m.clientInput.Update(msg)
+			return m, cmd
+		}
+	}
+	switch msg.String() {
+	case "esc":
+		m.overlay = overlayDetail
+		m.scroll = 0
+		return m, nil
+	case "j", "down":
+		if m.clientCursor < len(rows)-1 {
+			m.clientCursor++
+		}
+	case "k", "up":
+		if m.clientCursor > 0 {
+			m.clientCursor--
+		}
+	case "enter":
+		if m.clientCursor < 0 || m.clientCursor >= len(rows) {
+			return m, nil
+		}
+		m.clientInput.SetValue(rows[m.clientCursor].Name)
+		m.clientEditing = true
+		return m, m.clientInput.Focus()
+	}
+	return m, nil
+}
+
+func (m model) saveClientName() (model, tea.Cmd) {
+	rows := m.clientRows()
+	if m.clientCursor < 0 || m.clientCursor >= len(rows) {
+		return m, nil
+	}
+	ip := rows[m.clientCursor].IP
+	name := strings.TrimSpace(m.clientInput.Value())
+	api, ctx := m.api, m.ctx
+	m.loading = true
+	m.errMsg = ""
+	return m, func() tea.Msg {
+		err := api.SetClientName(ctx, ip, name)
+		return clientNamed{ip: ip, name: name, err: err}
+	}
+}
+
+func (m model) applyClientName(ip, name string) {
+	for i := range m.detailUsage.Clients {
+		if m.detailUsage.Clients[i].IP == ip {
+			m.detailUsage.Clients[i].Name = name
+		}
+	}
+	for i := range m.detailUsage.Recent {
+		if m.detailUsage.Recent[i].IP == ip {
+			m.detailUsage.Recent[i].ClientName = name
+		}
 	}
 }
 
@@ -1468,6 +1580,8 @@ func (m model) textFocused() bool {
 	switch m.overlay {
 	case overlayRevoke, overlayAdmin:
 		return true
+	case overlayClient:
+		return m.clientEditing
 	case overlayPolicy:
 		return m.polField > 0
 	case overlayCreate:
@@ -1550,6 +1664,11 @@ type usageLoaded struct {
 	keyID string
 	usage KeyUsage
 	err   error
+}
+
+type clientNamed struct {
+	ip, name string
+	err      error
 }
 
 func (m model) fetchUsage(keyID string) tea.Cmd {

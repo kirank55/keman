@@ -31,6 +31,7 @@ const (
 	overlayHelp
 	overlayAdmin
 	overlayRotate
+	overlayClient
 )
 
 // Key is one virtual key as the terminal UI shows it.
@@ -50,6 +51,7 @@ type Key struct {
 	CreatedAt     time.Time
 	LastSeen      time.Time
 	LastIP        string
+	LastClient    string
 	LastCountry   string
 	Detections7d  int
 	Exposure      []Exposure
@@ -189,6 +191,7 @@ type API interface {
 	KeyUsage(ctx context.Context, id string) (KeyUsage, error)
 	SetExpiry(ctx context.Context, id string, at *time.Time) error
 	RotateKey(ctx context.Context, id string, grace time.Duration) (Rotation, error)
+	SetClientName(ctx context.Context, ip, name string) error
 }
 
 // KeyUsage is stored request activity for one virtual key.
@@ -210,6 +213,7 @@ type KeyUsage struct {
 // UsageClient is a source address seen for a key.
 type UsageClient struct {
 	IP       string
+	Name     string
 	Country  string
 	ASN      int
 	Requests int
@@ -241,6 +245,7 @@ type UsageRequest struct {
 	CostMicro     *int64
 	CostEstimated bool
 	BlockedCode   string
+	ClientName    string
 }
 
 type model struct {
@@ -296,6 +301,10 @@ type model struct {
 	rotateID    string
 	rotateName  string
 	rotateGrace int
+
+	clientCursor  int
+	clientEditing bool
+	clientInput   textinput.Model
 
 	createField int
 	createCred  int
@@ -361,6 +370,7 @@ func newModel(ctx context.Context, api API, base string) model {
 	m.credSecret.EchoMode = textinput.EchoPassword
 	m.adminInput = bareInput(256, 48, "kma_...")
 	m.adminInput.EchoMode = textinput.EchoPassword
+	m.clientInput = bareInput(32, 24, "laptop")
 	return m
 }
 

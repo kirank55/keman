@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"sort"
 	"strings"
@@ -625,6 +626,56 @@ func (s *Service) Alerts(ctx context.Context) ([]model.AlertDestination, error) 
 	return out, nil
 }
 
+// SetClientName remembers a label for a client address. An empty name clears it.
+// The label is shared by every virtual key that sees that address.
+func (s *Service) SetClientName(ctx context.Context, ip, name, actor, caller string) (string, string, error) {
+	ip, err := canonicalClientIP(ip)
+	if err != nil {
+		return "", "", err
+	}
+	name, err = cleanClientName(name)
+	if err != nil {
+		return "", "", err
+	}
+	names, err := s.Store.ClientNames(ctx)
+	if err != nil {
+		return "", "", err
+	}
+	before := names[ip]
+	if before == name {
+		return ip, name, nil
+	}
+	if err := s.Store.SetClientName(ctx, ip, name); err != nil {
+		return "", "", err
+	}
+	s.audit(ctx, actor, "client.name", ip, before, name, caller)
+	return ip, name, nil
+}
+
+func canonicalClientIP(ip string) (string, error) {
+	parsed := net.ParseIP(strings.TrimSpace(ip))
+	if parsed == nil {
+		return "", &OpError{Status: 400, Code: "invalid", Message: "Client address is not a valid IP."}
+	}
+	return parsed.String(), nil
+}
+
+func cleanClientName(name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", nil
+	}
+	if len([]rune(name)) > 32 {
+		return "", &OpError{Status: 400, Code: "invalid", Message: "Client name must be 32 characters or fewer."}
+	}
+	for _, r := range name {
+		if r < 0x20 || r == 0x7f {
+			return "", &OpError{Status: 400, Code: "invalid", Message: "Client name cannot contain control characters."}
+		}
+	}
+	return name, nil
+}
+
 func checkAuth(c model.Credential) error {
 	switch c.AuthStyle {
 	case "", model.AuthHeader:
@@ -852,8 +903,22 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			write(w, nil, &OpError{Status: 404, Code: "not_found", Message: "Virtual key not found."})
 			return
 		}
-		usage, err := h.Service.Store.KeyUsage(r.Context(), id, 12)
+		usage, err := h.Service.Store.KeyUsage(r.Context(), id, store.UsageListLimit)
 		write(w, usage, err)
+	case r.Method == http.MethodPut && r.URL.Path == "/v1/clients":
+		var req struct {
+			IP   string `json:"ip"`
+			Name string `json:"name"`
+		}
+		if !decode(w, r, &req) {
+			return
+		}
+		savedIP, savedName, err := h.Service.SetClientName(r.Context(), req.IP, req.Name, actor, ip)
+		if err != nil {
+			write(w, nil, err)
+			return
+		}
+		write(w, map[string]string{"ip": savedIP, "name": savedName}, nil)
 	case r.Method == http.MethodPost && r.URL.Path == "/v1/rekey":
 		var req struct {
 			OldMasterKey string `json:"old_master_key"`
@@ -920,10 +985,14 @@ func (h *Handler) keyViews(ctx context.Context) []map[string]any {
 	sort.Slice(keys, func(i, j int) bool { return keys[i].ID < keys[j].ID })
 	now := h.Service.now()
 	var activity map[string]store.Activity
+	var names map[string]string
 	if h.Service.Store != nil {
 		a, err := h.Service.Store.KeyActivity(ctx, now.Add(-7*24*time.Hour))
 		if err == nil {
 			activity = a
+		}
+		if n, err := h.Service.Store.ClientNames(ctx); err == nil {
+			names = n
 		}
 	}
 	var out []map[string]any
@@ -942,6 +1011,9 @@ func (h *Handler) keyViews(ctx context.Context) []map[string]any {
 				view["last_seen_at"] = a.LastSeen
 				view["last_ip"] = a.LastIP
 				view["last_country"] = a.Country
+				if name := names[a.LastIP]; name != "" {
+					view["last_client_name"] = name
+				}
 			}
 			view["detections_7d"] = a.Detections
 			facts.LastSeen = a.LastSeen
