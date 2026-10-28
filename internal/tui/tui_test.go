@@ -895,3 +895,66 @@ func TestUSDHasCents(t *testing.T) {
 		}
 	}
 }
+
+func click(m model, x, y int) (model, tea.Cmd) {
+	next, cmd := m.Update(tea.MouseMsg{X: x, Y: y, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
+	return next.(model), cmd
+}
+
+func TestClickTabSwitchesScreen(t *testing.T) {
+	m := sample(&fakeAPI{})
+	line := strings.Split(m.View(), "\n")[0]
+	x := lipgloss.Width(line[:strings.Index(line, "3 audit")])
+	m, _ = click(m, x+1, 0)
+	if m.screen != screenAudit {
+		t.Fatalf("screen = %v, want audit", m.screen)
+	}
+}
+
+func TestClickRowSelectsThenOpens(t *testing.T) {
+	m := sample(&fakeAPI{})
+	m.keys = append(m.keys, Key{ID: "efgh5678", Name: "ci", Status: kmodel.StatusActive, Kind: kmodel.KindStandard})
+	var y int
+	for i, l := range strings.Split(m.View(), "\n") {
+		if strings.Contains(l, "ci ") {
+			y = i
+		}
+	}
+	m, _ = click(m, 5, y)
+	if m.cursor != 1 || m.overlay != overlayNone {
+		t.Fatalf("first click: cursor %d overlay %v", m.cursor, m.overlay)
+	}
+	m, _ = click(m, 5, y)
+	if m.overlay != overlayDetail {
+		t.Fatalf("second click should open detail, overlay %v", m.overlay)
+	}
+}
+
+func TestClickOverlayButtons(t *testing.T) {
+	m := sample(&fakeAPI{})
+	m = m.openRotate()
+	lines := strings.Split(m.View(), "\n")
+	var y, cx int
+	for i, l := range lines {
+		if strings.Contains(l, "Cancel") {
+			y, cx = i, lipgloss.Width(l[:strings.Index(l, "Cancel")])
+		}
+	}
+	if y == 0 {
+		t.Fatalf("no button row\n%s", m.View())
+	}
+	m, _ = click(m, cx+1, y)
+	if m.overlay != overlayNone {
+		t.Fatalf("cancel should close the dialog, overlay %v", m.overlay)
+	}
+	m = m.openRotate()
+	_, cmd := click(m, 2, y)
+	if cmd == nil {
+		t.Fatal("rotate button should start the rotation")
+	}
+	m = m.openRevoke()
+	m, _ = click(m, 2, y)
+	if m.overlay != overlayRevoke {
+		t.Fatal("revoke button must not act without the typed name")
+	}
+}

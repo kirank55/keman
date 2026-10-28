@@ -1376,14 +1376,15 @@ func (m model) renderCreate() string {
 func (m model) renderRevoke() string {
 	return m.form("revoke · "+m.revokeExpect, []string{
 		fieldLine(true, "confirm", m.revokeInput.View(), false),
-	}, "Revoke is permanent. Type "+m.revokeExpect+" to confirm. Disable (d) is reversible.")
+	}, "Revoke is permanent. Type "+m.revokeExpect+" to confirm. Disable (d) is reversible.") + "\n" + m.buttonRow() + "\n"
 }
 
 func (m model) renderRotate() string {
 	return m.form("rotate · "+m.rotateName, []string{
 		fieldLine(true, "old key", rotateGraces[m.rotateGrace].label, true),
 	}, "A new key is issued with the same credential and policy, and shown once.\n"+
-		"The old key keeps working for the grace period, then expires. Choose none if it leaked.")
+		"The old key keeps working for the grace period, then expires. Choose none if it leaked.") +
+		"\n" + m.buttonRow() + "\n"
 }
 
 func (m model) renderConfirm() string {
@@ -1406,6 +1407,9 @@ func (m model) renderConfirm() string {
 	b.WriteString(kv("would disable", when))
 	b.WriteString(kv("would block", strconv.Itoa(m.confirmReport.RequestsWouldBlock)+" requests"))
 	b.WriteString(kv("detections", strconv.Itoa(m.confirmReport.Detections)))
+	b.WriteString("\n")
+	b.WriteString(m.buttonRow())
+	b.WriteString("\n")
 	return b.String()
 }
 

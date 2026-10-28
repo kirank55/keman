@@ -35,7 +35,7 @@ func Run(ctx context.Context, api API, base string, in io.Reader, out io.Writer)
 		m.loading = false
 		m.setToken = gate.SetAdminToken
 	}
-	opts := []tea.ProgramOption{tea.WithAltScreen(), tea.WithOutput(out)}
+	opts := []tea.ProgramOption{tea.WithAltScreen(), tea.WithMouseCellMotion(), tea.WithOutput(out)}
 	if in != nil {
 		opts = append(opts, tea.WithInput(in))
 	}
