@@ -11,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	kmodel "github.com/kirank55/keman/internal/model"
+	"github.com/muesli/termenv"
 )
 
 type fakeAPI struct {
@@ -404,6 +405,65 @@ func TestDetailShowsUsage(t *testing.T) {
 	}
 }
 
+func TestDetailSplitShowsFindings(t *testing.T) {
+	lipgloss.SetColorProfile(termenv.ANSI256)
+	m := sample(&fakeAPI{})
+	m.overlay = overlayDetail
+	m.detailID = "abcd1234"
+	m.detailLoaded = true
+	m.width = 100
+	m.keys[0].Exposure = []Exposure{
+		{Code: "network_open", Severity: "high"},
+		{Code: "no_expiry", Severity: "medium"},
+	}
+	when := time.Date(2026, 10, 28, 11, 30, 0, 0, time.UTC)
+	cost := int64(2)
+	m.detailUsage = KeyUsage{
+		Requests: 7, TokensIn: 56, TokensOut: 7, CostMicro: 2, Priced: 5, LastSeen: when,
+		Clients: []UsageClient{{IP: "127.0.0.1", Requests: 7, LastSeen: when}},
+		Recent: []UsageRequest{{
+			Time: when, IP: "127.0.0.1", Status: 200, LatencyMS: 2,
+			Operation: "POST /v1/chat/completions", Model: "gpt-4o-mini",
+			TokensIn: 8, TokensOut: 1, CostMicro: &cost,
+		}},
+	}
+	view := m.View()
+	for _, want := range []string{"open network", "set --cidr <egress>/32", "no expiry", "key expiry 90d", "gpt-4o-mini", "╭", "╰"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("missing %q\n%s", want, view)
+		}
+	}
+	if strings.Contains(view, "anyone who has it can call it") {
+		t.Fatal("the phrase does not fit the rail at 100 columns")
+	}
+	var openLine string
+	for _, line := range strings.Split(view, "\n") {
+		if strings.Contains(line, "open network") {
+			openLine = line
+			break
+		}
+	}
+	if !strings.Contains(openLine, "48;") {
+		t.Fatalf("finding bar has no background\n%s", openLine)
+	}
+	assertFits(t, "detail findings", m)
+	bottoms := 0
+	for _, line := range strings.Split(view, "\n") {
+		if strings.Count(line, "╰") == 2 {
+			bottoms++
+		}
+	}
+	if bottoms != 1 {
+		t.Fatalf("panels should close on one shared row, found %d\n%s", bottoms, view)
+	}
+
+	m.width = 140
+	if !strings.Contains(m.View(), "anyone who has it can call it") {
+		t.Fatal("wide rail should keep the phrase on the bar")
+	}
+	assertFits(t, "detail findings", m)
+}
+
 func TestSetupFromEmptyKeys(t *testing.T) {
 	const secret = "sk-or-test-secret"
 	f := &fakeAPI{}
@@ -715,6 +775,11 @@ func TestDetailScrollStopsAtTheEnd(t *testing.T) {
 	m.overlay = overlayDetail
 	m.detailID = "abcd1234"
 	m.detailLoaded = true
+	recent := make([]UsageRequest, 40)
+	for i := range recent {
+		recent[i] = UsageRequest{Operation: "POST /v1/chat/completions", Status: 200, Model: "m"}
+	}
+	m.detailUsage = KeyUsage{Requests: len(recent), Recent: recent}
 	for i := 0; i < 200; i++ {
 		m, _ = press(m, "j")
 	}
