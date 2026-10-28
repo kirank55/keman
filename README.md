@@ -1,4 +1,28 @@
-# Keman
+<p align="center">
+  <img src="docs/media/logo.svg" width="96" height="96" alt="Keman logo">
+</p>
+
+<h1 align="center">Keman</h1>
+
+<p align="center">
+  <b>Your API keys will leak. Make the leaked copy worthless.</b><br>
+  A self-hosted proxy that keeps your real API keys and hands apps virtual ones you can lock, watch, and kill.
+</p>
+
+<p align="center">
+  <a href="https://github.com/kirank55/keman/actions/workflows/ci.yml"><img src="https://github.com/kirank55/keman/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/kirank55/keman/releases"><img src="https://img.shields.io/github/v/release/kirank55/keman?include_prereleases&label=release" alt="Release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License: Apache-2.0"></a>
+  <img src="https://img.shields.io/badge/go-1.22%2B-00ADD8" alt="Go 1.22+">
+</p>
+
+<p align="center">
+  <a href="#install">Install</a> ·
+  <a href="#try-it-in-60-seconds">Try it</a> ·
+  <a href="#quickstart">Quickstart</a> ·
+  <a href="#contain-a-leak">Contain a leak</a> ·
+  <a href="SECURITY.md">Security</a>
+</p>
 
 API keys leak. They get committed to repos, pasted into CI logs, baked into images, and copied from laptops. Keman makes a leaked key worth much less, and easy to kill.
 
@@ -6,13 +30,51 @@ Keman is a self-hosted proxy that keeps your real API keys and hands out virtual
 
 - **It may not work at all.** Lock each key to the addresses or countries it is used from. A copy used from anywhere else is refused.
 - **It stops working on its own.** New keys expire after 90 days by default.
-- **You hear about it.** Use from a new country or network, request spikes, repeated blocked requests, and use of a disabled key raise alerts to Slack or a signed webhook. Each alert says who called and from where, and gives the exact command to respond.
+- **You hear about it.** Use from a new country or network, request and spend spikes, repeated blocked requests, and use of a disabled key raise alerts to Slack or a signed webhook. Each alert says who called and from where, and gives the exact command to respond.
 - **Decoys catch the thief.** Canary keys never forward anything. Plant one in a repo or CI config, and any use raises a critical alert.
 - **You kill it in one step.** `keman key rotate laptop --grace 0` issues a replacement with the same policy and revokes the leaked key. The real provider key stays the same, and so does every other app.
 
-It is one Go binary with pure-Go SQLite, and needs no CGO. It works with OpenAI-compatible APIs (including OpenRouter), Anthropic, and any HTTP API that authenticates with a header, such as Stripe or GitHub. Apache-2.0.
+It is one Go binary with pure-Go SQLite, and needs no CGO. It works with OpenAI-compatible APIs (including OpenRouter), Anthropic, and any HTTP API that authenticates with a header, such as Stripe or GitHub. It runs on Linux, macOS and Windows, does not phone home, and is Apache-2.0.
 
-> **Beta.** The spec is [`beta.md`](beta.md). Decisions the spec left open are in [`docs/ASSUMPTIONS.md`](docs/ASSUMPTIONS.md).
+> **Beta.** The spec is [`beta.md`](beta.md). Decisions the spec left open are in [`docs/ASSUMPTIONS.md`](docs/ASSUMPTIONS.md). Changes are in [`CHANGELOG.md`](CHANGELOG.md).
+
+## Install
+
+macOS and Linux:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/kirank55/keman/main/scripts/install.sh | sh
+```
+
+The script picks the binary for your OS and CPU, checks its SHA-256 sum (and its cosign signature, if `cosign` is installed), and installs it to `/usr/local/bin` or `~/.local/bin`. Read it first if you like: [`scripts/install.sh`](scripts/install.sh).
+
+Other ways:
+
+| | |
+| --- | --- |
+| Go 1.22+ | `go install github.com/kirank55/keman/cmd/keman@latest` |
+| Docker | `docker pull ghcr.io/kirank55/keman:beta` (see [Docker](#docker)) |
+| Windows, or by hand | Download `keman_<os>_<arch>` from [Releases](https://github.com/kirank55/keman/releases). Every binary has a SHA-256 sum, an SBOM, and a cosign signature ([how to verify](SECURITY.md#verifying-a-release)). |
+| From source | `git clone https://github.com/kirank55/keman && cd keman && make build` |
+
+## Try it in 60 seconds
+
+**1. Find the keys you already leaked.** No server, no setup:
+
+```sh
+keman scan . --history
+```
+
+**2. See a week in the life of a team using Keman**, without a provider key. From a clone of this repo:
+
+```sh
+./scripts/demo.sh
+KEMAN_ADMIN_TOKEN="$(cat .demo/admin.token)" .demo/keman --config .demo/keman.yaml
+```
+
+`demo.sh` builds Keman and seeds `.demo/` with seven keys, a week of normal traffic, and the incidents Keman exists to catch: a stolen key draining spend from a new country, a locked key tried from outside its network, a disabled key back in use, a provider key revoked upstream, a decoy that fired, and probes for endpoints a key may not call. Everything runs locally against a mock upstream. Alerts land in `.demo/alerts.jsonl`, and every address is from a documentation range.
+
+**3. Put your own keys behind it.** See the [Quickstart](#quickstart).
 
 ## Find the keys you already leaked
 
@@ -39,12 +101,11 @@ Secrets are shown redacted. The exit code is 3 when anything is found, so `keman
 
 ## Quickstart
 
-You need Go 1.22 or newer.
+[Install](#install) Keman, then:
 
 ```sh
-go build -o keman ./cmd/keman
-./keman init    # prints the admin token once; writes keman.yaml and master.key here
-./keman         # opens the terminal UI and starts the proxy
+keman init    # prints the admin token once; writes keman.yaml and master.key here
+keman         # opens the terminal UI and starts the proxy
 ```
 
 In the UI:
@@ -78,6 +139,8 @@ curl http://127.0.0.1:8080/api/v1/chat/completions \
 Back in the UI, select the key and press Enter to see who called it and from where. Then press `p` and lock it to the addresses your app runs from: a copy used from anywhere else is refused.
 
 ### Try it without a provider key
+
+[`./scripts/demo.sh`](scripts/demo.sh) seeds a full demo install (see [Try it in 60 seconds](#try-it-in-60-seconds)). For a minimal end-to-end check instead:
 
 ```sh
 ./scripts/quickstart.sh
@@ -130,28 +193,28 @@ Every operation is also a one-shot command, for scripts:
 
 ```sh
 export KEMAN_ADMIN_TOKEN=kma_...
-./keman upstream add --name openai --profile openai --host api.openai.com --port 443 --tls
-./keman credential add --upstream openai --name primary --secret-env OPENAI_API_KEY
-./keman key create --credential primary --name laptop             # expires in 90 days
-./keman key create --credential primary --name ci --expires 30d
-./keman key create --credential primary --name decoy --kind canary
-./keman policy set laptop --cidr 203.0.113.7/32 --rpm 60
-./keman policy set laptop --mode auto_disable --yes
-./keman policy dry-run laptop
-./keman key rotate laptop --grace 24h
-./keman key expiry laptop 2026-12-31
-./keman key disable laptop
-./keman key enable laptop
-./keman key revoke laptop
-./keman exposure --strict
-./keman scan . --history
-./keman detection test
-./keman detection test --file events.jsonl --learned --expect spend_spike,new_country
-./keman canary create --credential primary --name repo-decoy --base-url https://keman.example.com
-./keman credential rotate primary --secret-env OPENAI_API_KEY
-./keman alert add --kind webhook --url https://example.invalid/hook --secret-file ./hook.secret
-./keman rekey --old-master-key-file ./old --new-master-key-file ./new
-./keman help
+keman upstream add --name openai --profile openai --host api.openai.com --port 443 --tls
+keman credential add --upstream openai --name primary --secret-env OPENAI_API_KEY
+keman key create --credential primary --name laptop             # expires in 90 days
+keman key create --credential primary --name ci --expires 30d
+keman key create --credential primary --name decoy --kind canary
+keman policy set laptop --cidr 203.0.113.7/32 --rpm 60
+keman policy set laptop --mode auto_disable --yes
+keman policy dry-run laptop
+keman key rotate laptop --grace 24h
+keman key expiry laptop 2026-12-31
+keman key disable laptop
+keman key enable laptop
+keman key revoke laptop
+keman exposure --strict
+keman scan . --history
+keman detection test
+keman detection test --file events.jsonl --learned --expect spend_spike,new_country
+keman canary create --credential primary --name repo-decoy --base-url https://keman.example.com
+keman credential rotate primary --secret-env OPENAI_API_KEY
+keman alert add --kind webhook --url https://example.invalid/hook --secret-file ./hook.secret
+keman rekey --old-master-key-file ./old --new-master-key-file ./new
+keman help
 ```
 
 Keys, credentials and upstreams can be named by name or id. Put secrets in `--secret-env` or `--secret-file`, never on the command line. Global flags (`--config`, `--admin-url`, `--admin-token`) work before or after the subcommand. Without `--admin-url`, the CLI uses `admin_listen` from the config, including `unix://` sockets. After `init`, every change goes through the admin API, so a running server never holds a stale copy.
@@ -169,7 +232,7 @@ The proxy listens on `0.0.0.0:8080`. The admin API and `/metrics` listen on `127
 - Country and ASN rules, and country allowlists, need a GeoLite2 or DB-IP `.mmdb` file in `geoip_country_db` and `geoip_asn_db`.
 - `trusted_proxies` is empty by default. `X-Forwarded-For` from anyone else is ignored and is not sent upstream. All address rules use one client IP.
 - New standard keys expire after `default_key_ttl` (default `2160h`, 90 days). Set it to `0s` to turn the default off.
-- OpenAI and Anthropic have built-in path allowlists. Generic HTTP requires one, so a leaked key for a generic upstream can only call the endpoints you listed.
+- OpenAI and Anthropic have built-in path allowlists. Generic HTTP requires one, so a leaked key for a generic upstream can only call the endpoints you listed. Paths with `.` or `..` segments or backslashes never match, so `/v1/customers/../payouts` cannot slip past `GET /v1/customers/*`.
 
 ## Spend caps (LLM upstreams)
 
@@ -194,12 +257,13 @@ Runaway spend is often the first sign of a stolen LLM key, so OpenAI and Anthrop
 ## Docker
 
 ```sh
-docker build -t keman:beta .
 docker volume create keman-data
 
-docker run --rm -v keman-data:/home/nonroot keman:beta init
-docker run --rm -p 8080:8080 -v keman-data:/home/nonroot keman:beta serve
+docker run --rm -v keman-data:/home/nonroot ghcr.io/kirank55/keman:beta init
+docker run --rm -p 8080:8080 -v keman-data:/home/nonroot ghcr.io/kirank55/keman:beta serve
 ```
+
+The image is multi-arch (amd64, arm64), distroless, runs as non-root, and is signed with cosign. To build it yourself: `docker build -t keman:beta .`
 
 `init` writes `keman.yaml`, `master.key` and the database to the volume, and prints the admin token. The admin listener stays on `127.0.0.1:8081` inside the container. Use `docker exec` for the CLI, bind a Unix socket on the volume, or set `KEMAN_ADMIN_LISTEN=0.0.0.0:8081` only on a private network. For production, keep the master key out of the data volume (see [`SECURITY.md`](SECURITY.md)).
 
@@ -211,7 +275,7 @@ CGO_ENABLED=0 go build -o bin/keman ./cmd/keman
 make fuzz
 ```
 
-Tests use an injectable clock. Fuzz targets cover virtual-key parsing, header stripping and path matching. Proxy overhead is measured in [`benchmarks/RESULTS.md`](benchmarks/RESULTS.md). [`examples/sdk_stream.py`](examples/sdk_stream.py) and [`examples/sdk_stream.mjs`](examples/sdk_stream.mjs) stream through Keman with the official SDKs, and [`examples/mock-openai`](examples/mock-openai) is a local upstream for them.
+See [`CONTRIBUTING.md`](CONTRIBUTING.md). Tests use an injectable clock. Fuzz targets cover virtual-key parsing, header stripping and path matching. Proxy overhead is measured in [`benchmarks/RESULTS.md`](benchmarks/RESULTS.md). [`examples/sdk_stream.py`](examples/sdk_stream.py) and [`examples/sdk_stream.mjs`](examples/sdk_stream.mjs) stream through Keman with the official SDKs, and [`examples/mock-openai`](examples/mock-openai) is a local upstream for them.
 
 ## Security
 
@@ -219,6 +283,6 @@ Read [`SECURITY.md`](SECURITY.md) and [`docs/THREAT-MODEL.md`](docs/THREAT-MODEL
 
 ## Release
 
-`.github/workflows/release.yml` builds static Linux amd64 and arm64 binaries, an SPDX SBOM of each binary (Syft), SHA-256 sums and keyless cosign signatures, and attaches them to one GitHub release. Pushing a `v*` tag runs it. No signed release has been published yet.
+Pushing a `v*` tag runs [`.github/workflows/release.yml`](.github/workflows/release.yml). It tests, then builds static binaries for Linux (amd64, arm64), macOS (amd64, arm64) and Windows (amd64), each with an SPDX SBOM (Syft), a SHA-256 sum and a keyless cosign signature, and publishes them with `install.sh` as one GitHub release. It also pushes a signed multi-arch image to `ghcr.io/kirank55/keman`. Release notes come from [`docs/releases/`](docs/releases/). Tags with a `-` are marked as prereleases.
 
 Background research from before the beta is in [`docs/archive/PLAN.md`](docs/archive/PLAN.md).

@@ -64,7 +64,12 @@ func ParseList(s string) ([]Rule, error) {
 func (r Rule) String() string { return r.Method + " " + r.Pattern }
 
 // Match returns the operation ("METHOD pattern") of the first matching rule.
+// A path with dot segments, backslashes or control characters never
+// matches: upstreams may normalize it to a path the allowlist refuses.
 func Match(rules []Rule, method, p string) (string, bool) {
+	if !safePath(p) {
+		return "", false
+	}
 	method = strings.ToUpper(method)
 	p = normalize(p)
 	for _, r := range rules {
@@ -76,6 +81,22 @@ func Match(rules []Rule, method, p string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// safePath reports whether p is free of segments that servers resolve
+// differently: "." and ".." (also before a ";" parameter, as in "..;"),
+// backslashes, and control characters.
+func safePath(p string) bool {
+	if strings.IndexFunc(p, func(r rune) bool { return r == '\\' || unicode.IsControl(r) }) >= 0 {
+		return false
+	}
+	for _, seg := range strings.Split(p, "/") {
+		seg, _, _ = strings.Cut(seg, ";")
+		if seg == "." || seg == ".." {
+			return false
+		}
+	}
+	return true
 }
 
 func matchPath(pattern, p string) bool {

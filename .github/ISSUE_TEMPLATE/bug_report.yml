@@ -1,0 +1,38 @@
+name: Bug report
+description: Something does not work as documented
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Remove API keys, virtual keys and admin tokens before you paste anything. Security issues go through a private advisory (see SECURITY.md), not here.
+  - type: input
+    id: version
+    attributes:
+      label: keman version
+      description: Output of `keman version`
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS and install method
+      placeholder: macOS 15 arm64, install.sh
+    validations:
+      required: true
+  - type: dropdown
+    id: profile
+    attributes:
+      label: Upstream profile
+      options: [openai, anthropic, generic, not relevant]
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: The commands you ran, what you expected, and what you got.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      render: text

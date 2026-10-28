@@ -23,3 +23,10 @@ jobs:
           CGO_ENABLED=0 go test -fuzz=FuzzMatch -fuzztime=10s ./internal/pathmatch
       - name: Build static binary
         run: CGO_ENABLED=0 go build -o bin/keman ./cmd/keman
+      - name: Cross-compile release targets
+        run: |
+          for t in linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
+            CGO_ENABLED=0 GOOS=${t%/*} GOARCH=${t#*/} go build -o /dev/null ./cmd/keman
+          done
+      - name: Install script
+        run: sh -n scripts/install.sh

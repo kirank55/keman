@@ -84,6 +84,9 @@ type Detection struct {
 	KeyID    string
 	Rule     string
 	Severity string
+	// Count is how many detections this row stands for after grouping
+	// (0 or 1 means one).
+	Count int
 }
 
 // AuditRow is one admin action.

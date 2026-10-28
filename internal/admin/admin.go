@@ -982,7 +982,12 @@ func createdView(token string, key model.VirtualKey) map[string]any {
 // and exposure findings. Activity is best effort: a store error leaves it out.
 func (h *Handler) keyViews(ctx context.Context) []map[string]any {
 	keys := h.Service.State.Keys()
-	sort.Slice(keys, func(i, j int) bool { return keys[i].ID < keys[j].ID })
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].Name != keys[j].Name {
+			return keys[i].Name < keys[j].Name
+		}
+		return keys[i].ID < keys[j].ID
+	})
 	now := h.Service.now()
 	var activity map[string]store.Activity
 	var names map[string]string

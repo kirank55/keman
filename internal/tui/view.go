@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -515,10 +516,21 @@ func (m model) renderDetections() string {
 		}
 		return b.String()
 	}
+	// The key column fits the longest "name (id)" label, within limits, so
+	// names are not cut while the rule keeps room for its count.
+	keyW := 14
+	for _, d := range rows {
+		if n := lipgloss.Width(m.keyLabel(d.KeyID)); n > keyW {
+			keyW = n
+		}
+	}
+	if keyW > 28 {
+		keyW = 28
+	}
 	cols := []column{
 		{title: "time", width: len(timeLayout)},
 		{title: "severity", width: 8},
-		{title: "key", width: 14},
+		{title: "key", width: keyW},
 		{title: "rule", width: 10, flex: true},
 	}
 	cells := make([][]cell, len(rows))
@@ -527,7 +539,7 @@ func (m model) renderDetections() string {
 			txt(fmtTime(d.Time)),
 			styled(d.Severity, severityStyle(d.Severity)),
 			txt(m.keyLabel(d.KeyID)),
-			txt(d.Rule),
+			txt(d.Rule + countSuffix(d.Count)),
 		}
 	}
 	start, end := m.span(len(rows))
@@ -854,7 +866,7 @@ func (m model) detailStatLines(k Key, now time.Time) []string {
 	if u.Requests == 0 {
 		lines = append(lines, dimStyle.Render("no requests yet"))
 	} else {
-		line := fmt.Sprintf("%d requests", u.Requests)
+		line := thousands(int64(u.Requests)) + " requests"
 		if !u.LastSeen.IsZero() {
 			line += " · last " + shortTime(u.LastSeen, now)
 		}
@@ -885,11 +897,11 @@ func (m model) detailStatLines(k Key, now time.Time) []string {
 	if blocked > 0 {
 		lines = append(lines, kvLine("blocked", badStyle.Render(strconv.Itoa(blocked))))
 	}
-	if len(m.detailDets) > 0 {
+	if dets := groupDetections(m.detailDets); len(dets) > 0 {
 		lines = append(lines, "", dimStyle.Render("detections"))
-		for i := len(m.detailDets) - 1; i >= 0; i-- {
-			d := m.detailDets[i]
-			lines = append(lines, fmtTime(d.Time)+"  "+severityStyle(d.Severity).Render(d.Severity)+"  "+d.Rule)
+		for i := len(dets) - 1; i >= 0; i-- {
+			d := dets[i]
+			lines = append(lines, fmtTime(d.Time)+"  "+severityStyle(d.Severity).Render(d.Severity)+"  "+d.Rule+countSuffix(d.Count))
 		}
 	}
 	return lines
@@ -914,12 +926,12 @@ func spendLines(k Key, u KeyUsage) []string {
 }
 
 func tokenLine(u KeyUsage) string {
-	s := fmt.Sprintf("in %d · out %d", u.TokensIn, u.TokensOut)
+	s := "in " + thousands(u.TokensIn) + " · out " + thousands(u.TokensOut)
 	if u.Cached > 0 {
-		s += fmt.Sprintf(" · cached %d", u.Cached)
+		s += " · cached " + thousands(u.Cached)
 	}
 	if u.CacheWrite > 0 {
-		s += fmt.Sprintf(" · cache write %d", u.CacheWrite)
+		s += " · cache write " + thousands(u.CacheWrite)
 	}
 	return s
 }
@@ -1035,7 +1047,7 @@ func (m model) detailCalls(k Key, inner int, now time.Time) (string, string) {
 			}
 		}
 		if llm {
-			row.tokens = fmt.Sprintf("%d → %d", r.TokensIn, r.TokensOut)
+			row.tokens = thousands(r.TokensIn) + " → " + thousands(r.TokensOut)
 			if n := lipgloss.Width(row.tokens); n > tokW {
 				tokW = n
 			}
@@ -1282,7 +1294,7 @@ func clientLine(c UsageClient, withCount bool) string {
 		s = c.Name + "  " + s
 	}
 	if withCount {
-		s = fmt.Sprintf("%s  %d", s, c.Requests)
+		s = s + "  " + thousands(int64(c.Requests))
 	}
 	return s
 }
@@ -1370,7 +1382,7 @@ func (m model) renderClient() string {
 		b.WriteString("  ")
 		b.WriteString(st.Render(name))
 		if c.Requests > 0 {
-			b.WriteString(dimStyle.Render(fmt.Sprintf("  %d", c.Requests)))
+			b.WriteString(dimStyle.Render("  " + thousands(int64(c.Requests))))
 		}
 		b.WriteString("\n")
 	}
@@ -1722,16 +1734,60 @@ func severityStyle(s string) lipgloss.Style {
 
 // usd is the one dollar format: at least cents, more digits only when a
 // sub-cent amount needs them.
+// usd shows dollars to the cent, with thousands separators. Amounts under
+// a cent, such as one cheap request or a tiny cap, keep up to four
+// decimals so they do not all read as $0.00.
 func usd(micro int64) string {
-	s := money.FormatUSD(micro)
-	dot := strings.IndexByte(s, '.')
-	switch {
-	case dot < 0:
-		s += ".00"
-	case len(s)-dot == 2:
-		s += "0"
+	sign := ""
+	if micro < 0 {
+		sign = "-"
+		if micro == math.MinInt64 {
+			micro = math.MaxInt64
+		} else {
+			micro = -micro
+		}
 	}
-	return "$" + s
+	if micro > 0 && micro < money.Dollar/100 {
+		tenths := (micro + 50) / 100 // units of $0.0001
+		if tenths == 0 {
+			return sign + "< $0.0001"
+		}
+		s := strings.TrimRight(fmt.Sprintf("%04d", tenths), "0")
+		if len(s) < 2 {
+			s += strings.Repeat("0", 2-len(s))
+		}
+		return sign + "$0." + s
+	}
+	cents := (micro + 5_000) / 10_000
+	return fmt.Sprintf("%s$%s.%02d", sign, thousands(cents/100), cents%100)
+}
+
+// thousands writes n with comma separators: 7367481 → 7,367,481.
+func thousands(n int64) string {
+	s := strconv.FormatInt(n, 10)
+	neg := strings.HasPrefix(s, "-")
+	if neg {
+		s = s[1:]
+	}
+	var b strings.Builder
+	for i, r := range s {
+		if i > 0 && (len(s)-i)%3 == 0 {
+			b.WriteByte(',')
+		}
+		b.WriteRune(r)
+	}
+	if neg {
+		return "-" + b.String()
+	}
+	return b.String()
+}
+
+// countSuffix marks a grouped detection row: " ×12".
+func countSuffix(n int) string {
+	if n <= 1 {
+		return ""
+	}
+	return " ×" + strconv.Itoa(n)
 }
 
 func capLine(micro *int64) string {
