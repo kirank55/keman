@@ -210,6 +210,7 @@ func TestSpendFailClosed(t *testing.T) {
 	if resp.StatusCode != 200 {
 		t.Fatalf("warm %d %s", resp.StatusCode, raw)
 	}
+	env.waitDirtySpend(t)
 	env.proc.SetSpendSaverForTest(func(context.Context, []model.SpendRow) error {
 		return errors.New("disk")
 	})
@@ -409,6 +410,20 @@ func startStack(t *testing.T, upstream string, trusted []string, log *slog.Logge
 		s.upstream = created["id"].(string)
 	}
 	return s
+}
+
+func (s *stack) waitDirtySpend(t *testing.T) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if rows := s.proc.DirtySpendForTest(); len(rows) > 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("spend was not recorded after proxy request")
+		}
+		time.Sleep(time.Millisecond)
+	}
 }
 
 func (s *stack) close() {

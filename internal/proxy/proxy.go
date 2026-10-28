@@ -7,6 +7,7 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net"
@@ -603,14 +604,23 @@ func (b *countBody) Read(p []byte) (int, error) {
 			b.scan.Feed(p[:n])
 		}
 	}
+	// ReverseProxy can flush a Content-Length body to the client before Close.
+	// Settle spend on EOF so usage is recorded as soon as the body is complete.
+	if errors.Is(err, io.EOF) {
+		b.finish()
+	}
 	return n, err
 }
 
 func (b *countBody) Close() error {
+	b.finish()
+	return b.ReadCloser.Close()
+}
+
+func (b *countBody) finish() {
 	b.once.Do(func() {
 		if b.onClose != nil {
 			b.onClose()
 		}
 	})
-	return b.ReadCloser.Close()
 }

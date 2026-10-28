@@ -17,3 +17,6 @@ func (a *App) SetSpendSaverForTest(fn func(context.Context, []model.SpendRow) er
 
 // FlushSpendForTest runs one spend flush.
 func (a *App) FlushSpendForTest() { a.flush(context.Background()) }
+
+// DirtySpendForTest returns in-memory spend rows that have not been flushed.
+func (a *App) DirtySpendForTest() []model.SpendRow { return a.state.DirtySpend() }
