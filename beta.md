@@ -34,7 +34,7 @@ The beta supports HTTP only. Other protocols, such as Redis and MongoDB, may com
 - Behavior alerts: rate spike, spend spike, new country, new ASN, repeated allowlist violations, upstream auth-error burst, use of a disabled or revoked key, canary use.
 - Opt-in auto-disable, with a dry-run mode.
 - Alerts to Slack and signed webhooks.
-- CLI, admin API and Prometheus metrics.
+- CLI, terminal UI (the default when you run `keman`), admin API and Prometheus metrics. `keman` starts the local server when none is listening and stops that server on exit.
 - Audit log.
 - SQLite storage.
 
@@ -46,7 +46,7 @@ The beta supports HTTP only. Other protocols, such as Redis and MongoDB, may com
 - Email alerts. Use a webhook to bridge to email.
 - Multi-instance or high-availability deployment, and Postgres.
 - Cloud KMS for the master key.
-- Dashboard UI, and "this was me" buttons in alerts. Alerts include CLI commands instead.
+- A web dashboard, and "this was me" buttons in alerts. Alerts include CLI commands instead. `keman` is the terminal UI.
 - Hosted version, SSO and teams.
 - Model routing, fallbacks and caching.
 - Storing request or response bodies, and content inspection.
@@ -140,7 +140,7 @@ A canary key returns a 401 shaped like its upstream profile's own error, not a `
 
 ## Security
 
-- **Envelope encryption.** A 32-byte master key from `KEMAN_MASTER_KEY` or a file wraps a data key. The data key encrypts each credential with AES-256-GCM. The credential id is bound to the ciphertext as authenticated data, so ciphertexts can't be swapped.
+- **Envelope encryption.** `init` writes a 32-byte master key to `master.key` (mode 0600) next to the config and sets `master_key_file`, unless that field is already set. `KEMAN_MASTER_KEY` still supplies the key for that one command and is copied into the file. The master key wraps a data key. The data key encrypts each credential with AES-256-GCM. The credential id is bound to the ciphertext as authenticated data, so ciphertexts can't be swapped.
 - **Rotation.**
   - `credential rotate <id>` replaces the real key in place, and its virtual keys keep working.
   - `rekey` takes the old and new master keys and re-wraps the data key.

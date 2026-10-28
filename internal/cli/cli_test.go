@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/kirank55/keman/internal/adminclient"
 )
 
 func TestHelpAndUnknownCommand(t *testing.T) {
@@ -34,13 +36,23 @@ func TestHelpAndUnknownCommand(t *testing.T) {
 func TestConfigFlagAfterCommand(t *testing.T) {
 	dir := t.TempDir()
 	cfg := filepath.Join(dir, "keman.yaml")
+	db := filepath.Join(dir, "keman.db")
 	var stderr bytes.Buffer
-	code := Run(context.Background(), []string{"init", "--config", cfg}, func(string) string { return "" }, nil, &bytes.Buffer{}, &stderr)
+	getenv := func(k string) string {
+		if k == "KEMAN_DATABASE" {
+			return db
+		}
+		return ""
+	}
+	code := Run(context.Background(), []string{"init", "--config", cfg}, getenv, nil, &bytes.Buffer{}, &stderr)
 	if strings.Contains(stderr.String(), "init takes no arguments") {
 		t.Fatalf("global flag after command was rejected: %s", stderr.String())
 	}
-	if code != 1 || !strings.Contains(stderr.String(), "KEMAN_MASTER_KEY") {
+	if code != 0 {
 		t.Fatalf("code %d %s", code, stderr.String())
+	}
+	if _, err := os.Stat(filepath.Join(dir, "master.key")); err != nil {
+		t.Fatalf("init did not write master.key next to --config: %v", err)
 	}
 }
 
@@ -77,11 +89,11 @@ func TestInitWritesEffectiveDatabase(t *testing.T) {
 }
 
 func TestUnixPathParse(t *testing.T) {
-	p, ok := unixPath("unix:///tmp/keman.sock")
+	p, ok := adminclient.UnixPath("unix:///tmp/keman.sock")
 	if !ok || p != "/tmp/keman.sock" {
 		t.Fatalf("%q %v", p, ok)
 	}
-	if _, ok := unixPath("http://127.0.0.1:8081"); ok {
+	if _, ok := adminclient.UnixPath("http://127.0.0.1:8081"); ok {
 		t.Fatal("http url")
 	}
 }

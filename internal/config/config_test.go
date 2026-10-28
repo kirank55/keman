@@ -33,6 +33,45 @@ func TestExampleFileKeepsDurationStrings(t *testing.T) {
 	}
 }
 
+func TestSetMasterKeyFilePreservesSettings(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "keman.yaml")
+	if err := WriteDefault(path); err != nil {
+		t.Fatal(err)
+	}
+	keyPath := filepath.Join(dir, "master.key")
+	if err := SetMasterKeyFile(path, keyPath); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), "Keman server settings") {
+		t.Fatalf("header gone:\n%s", b)
+	}
+	if strings.Contains(string(b), path+".tmp") {
+		t.Fatal("left a temp file in the config")
+	}
+	cfg, err := Load(path, func(string) string { return "" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MasterKeyFile != keyPath {
+		t.Fatalf("master key file %q", cfg.MasterKeyFile)
+	}
+	if cfg.ProxyListen != "0.0.0.0:8080" || cfg.SpendFlushInterval != 5*time.Second {
+		t.Fatalf("%+v", cfg)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("mode %o", info.Mode().Perm())
+	}
+}
+
 func TestWriteIfAbsentRecordsEffectiveSettings(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "keman.yaml")

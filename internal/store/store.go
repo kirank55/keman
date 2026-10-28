@@ -459,6 +459,168 @@ func (s *Store) EventsSince(ctx context.Context, keyID string, since time.Time) 
 	return out, rows.Err()
 }
 
+// UsageClient is one source address that has called with a virtual key.
+type UsageClient struct {
+	IP       string    `json:"ip"`
+	Country  string    `json:"country,omitempty"`
+	ASN      int       `json:"asn,omitempty"`
+	Requests int       `json:"requests"`
+	LastSeen time.Time `json:"last_seen"`
+}
+
+// UsageModel is token and cost totals for one model name.
+type UsageModel struct {
+	Model     string `json:"model"`
+	Requests  int    `json:"requests"`
+	TokensIn  int64  `json:"tokens_in"`
+	TokensOut int64  `json:"tokens_out"`
+	CostMicro int64  `json:"cost_microusd"`
+	Priced    int    `json:"priced"`
+}
+
+// UsageRequest is one proxied call, newest first in KeyUsage.Recent.
+type UsageRequest struct {
+	Time          time.Time `json:"time"`
+	IP            string    `json:"ip"`
+	Country       string    `json:"country,omitempty"`
+	ASN           int       `json:"asn,omitempty"`
+	Operation     string    `json:"operation"`
+	Status        int       `json:"status"`
+	LatencyMS     int64     `json:"latency_ms"`
+	Model         string    `json:"model,omitempty"`
+	TokensIn      int64     `json:"tokens_in"`
+	TokensOut     int64     `json:"tokens_out"`
+	CostMicro     *int64    `json:"cost_microusd,omitempty"`
+	CostEstimated bool      `json:"cost_estimated,omitempty"`
+	BlockedCode   string    `json:"blocked_code,omitempty"`
+}
+
+// KeyUsage is request activity still kept for a virtual key.
+type KeyUsage struct {
+	Requests   int            `json:"requests"`
+	TokensIn   int64          `json:"tokens_in"`
+	TokensOut  int64          `json:"tokens_out"`
+	Cached     int64          `json:"cached_tokens"`
+	CacheWrite int64          `json:"cache_write_tokens"`
+	CostMicro  int64          `json:"cost_microusd"`
+	Priced     int            `json:"priced"`
+	Estimated  int            `json:"estimated"`
+	LastSeen   *time.Time     `json:"last_seen,omitempty"`
+	Clients    []UsageClient  `json:"clients"`
+	Models     []UsageModel   `json:"models"`
+	Recent     []UsageRequest `json:"recent"`
+}
+
+// KeyUsage returns totals, client addresses, and the newest requests for a key.
+// limit caps each of those lists. Events older than the retention window are already gone.
+func (s *Store) KeyUsage(ctx context.Context, keyID string, limit int) (KeyUsage, error) {
+	if limit <= 0 {
+		limit = 12
+	}
+	var out KeyUsage
+	out.Clients = []UsageClient{}
+	out.Models = []UsageModel{}
+	out.Recent = []UsageRequest{}
+	var tin, tout, cached, cwrite, cost sql.NullInt64
+	var priced, estimated sql.NullInt64
+	var last sql.NullString
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*),
+		COALESCE(SUM(tokens_in), 0), COALESCE(SUM(tokens_out), 0),
+		COALESCE(SUM(cached_tokens), 0), COALESCE(SUM(cache_write_tokens), 0),
+		COALESCE(SUM(cost_micro), 0),
+		SUM(CASE WHEN cost_micro IS NULL THEN 0 ELSE 1 END),
+		SUM(CASE WHEN cost_estimated = 1 THEN 1 ELSE 0 END),
+		MAX(ts)
+		FROM events WHERE virtual_key_id = ?`, keyID).Scan(
+		&out.Requests, &tin, &tout, &cached, &cwrite, &cost, &priced, &estimated, &last)
+	if err != nil {
+		return KeyUsage{}, err
+	}
+	out.TokensIn, out.TokensOut = tin.Int64, tout.Int64
+	out.Cached, out.CacheWrite = cached.Int64, cwrite.Int64
+	out.CostMicro = cost.Int64
+	out.Priced = int(priced.Int64)
+	out.Estimated = int(estimated.Int64)
+	if last.Valid && last.String != "" {
+		if t, err := parseTime(last.String); err == nil {
+			out.LastSeen = &t
+		}
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT ip, country, asn, COUNT(*), MAX(ts)
+		FROM events WHERE virtual_key_id = ?
+		GROUP BY ip, country, asn
+		ORDER BY COUNT(*) DESC, MAX(ts) DESC
+		LIMIT ?`, keyID, limit)
+	if err != nil {
+		return KeyUsage{}, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var c UsageClient
+		var ts string
+		if err := rows.Scan(&c.IP, &c.Country, &c.ASN, &c.Requests, &ts); err != nil {
+			return KeyUsage{}, err
+		}
+		c.LastSeen, _ = parseTime(ts)
+		out.Clients = append(out.Clients, c)
+	}
+	if err := rows.Err(); err != nil {
+		return KeyUsage{}, err
+	}
+	if err := rows.Close(); err != nil {
+		return KeyUsage{}, err
+	}
+	mrows, err := s.db.QueryContext(ctx, `SELECT model, COUNT(*),
+		COALESCE(SUM(tokens_in), 0), COALESCE(SUM(tokens_out), 0),
+		COALESCE(SUM(cost_micro), 0),
+		SUM(CASE WHEN cost_micro IS NULL THEN 0 ELSE 1 END)
+		FROM events WHERE virtual_key_id = ?
+		GROUP BY model
+		ORDER BY COUNT(*) DESC, model
+		LIMIT ?`, keyID, limit)
+	if err != nil {
+		return KeyUsage{}, err
+	}
+	defer mrows.Close()
+	for mrows.Next() {
+		var m UsageModel
+		var priced int
+		if err := mrows.Scan(&m.Model, &m.Requests, &m.TokensIn, &m.TokensOut, &m.CostMicro, &priced); err != nil {
+			return KeyUsage{}, err
+		}
+		m.Priced = priced
+		out.Models = append(out.Models, m)
+	}
+	if err := mrows.Err(); err != nil {
+		return KeyUsage{}, err
+	}
+	rrows, err := s.db.QueryContext(ctx, `SELECT ts, ip, country, asn, operation, status, latency_ms, model, tokens_in, tokens_out, cost_micro, cost_estimated, blocked_code
+		FROM events WHERE virtual_key_id = ?
+		ORDER BY ts DESC, id DESC
+		LIMIT ?`, keyID, limit)
+	if err != nil {
+		return KeyUsage{}, err
+	}
+	defer rrows.Close()
+	for rrows.Next() {
+		var r UsageRequest
+		var ts string
+		var cost sql.NullInt64
+		var est int
+		if err := rrows.Scan(&ts, &r.IP, &r.Country, &r.ASN, &r.Operation, &r.Status, &r.LatencyMS, &r.Model, &r.TokensIn, &r.TokensOut, &cost, &est, &r.BlockedCode); err != nil {
+			return KeyUsage{}, err
+		}
+		r.Time, _ = parseTime(ts)
+		r.CostEstimated = est == 1
+		if cost.Valid {
+			v := cost.Int64
+			r.CostMicro = &v
+		}
+		out.Recent = append(out.Recent, r)
+	}
+	return out, rrows.Err()
+}
+
 func (s *Store) SaveBaseline(ctx context.Context, b model.Baseline) error {
 	cj, err := json.Marshal(b.Countries)
 	if err != nil {

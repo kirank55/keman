@@ -26,26 +26,19 @@ export KEMAN_ADMIN_TOKEN="$(cat .quickstart/admin.token)"
 ### Manual setup
 
 ```sh
-export KEMAN_MASTER_KEY="$(openssl rand -base64 32)"
-export KEMAN_DATABASE="$PWD/keman.db"
 go build -o keman ./cmd/keman
 
 ./keman init
 # prints admin_token: kma_... once. Store it.
+# writes master.key (mode 0600) and sets master_key_file in keman.yaml.
 # init also writes keman.yaml with the database path actually used.
 
-# terminal A
-export KEMAN_ADMIN_TOKEN=kma_...
-./keman serve
-
-# terminal B
-export KEMAN_ADMIN_TOKEN=kma_...
-./keman upstream add --name openai --profile openai --host api.openai.com --port 443 --tls
-printf '%s' "$OPENAI_API_KEY" > /tmp/openai.key
-./keman credential add --upstream openai --name primary --header "Authorization: Bearer {key}" --secret-file /tmp/openai.key
-./keman key create --credential primary --name laptop
+./keman
 ```
 
+`keman` is the full-screen UI. It reads the master key from `master_key_file`. `init` writes `master.key` next to the config when that field is empty, including when the key was only in `KEMAN_MASTER_KEY`. It starts the local server when nothing is already listening, and it stops that server when you quit. `keman serve` keeps a server running after the UI closes; the UI attaches to that server and leaves it up. The UI asks for the admin token from `init`. The token is masked. Set `KEMAN_ADMIN_TOKEN` to skip that prompt. On an empty install, press `a` and accept the OpenRouter upstream. Host, port, TLS, and paths are filled in; change them for another provider. The credential form opens next. Type the provider API key there, or leave the source on environment when `OPENROUTER_API_KEY` is already set. The new-key form opens after that, and the virtual key is shown once. Logs from a server the UI started are appended to `keman.log` next to the database.
+
+Point an OpenAI-compatible client at `http://127.0.0.1:8080` and send that virtual key as the bearer token. The same upstream, credential, and key commands still work from the shell and are listed below.
 `key create` prints JSON with a `token` field once (`kmn_...`). Point an OpenAI-compatible client at Keman and send that token as the API key:
 
 | Client | `base_url` / `baseURL` |
@@ -74,6 +67,7 @@ A copy of the server settings is in [`examples/keman.yaml`](examples/keman.yaml)
 ./keman rekey --old-master-key-file ./old --new-master-key-file ./new
 ```
 
+Put CLI secrets in `--secret-env` or `--secret-file`. The TUI asks for the admin token when `KEMAN_ADMIN_TOKEN` is unset, and it takes a provider API key from the environment or a masked field. After `init`, both write through the admin API so a running process does not keep a stale copy.
 Put secrets in `--secret-env` or `--secret-file`. After `init`, the CLI writes through the admin API so a running process does not keep a stale copy. `serve` flushes spend and drains the event queue on Ctrl+C / SIGTERM.
 
 ## Spend, profiles, and detection

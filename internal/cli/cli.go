@@ -5,24 +5,28 @@ package cli
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/kirank55/keman/internal/adminclient"
 	"github.com/kirank55/keman/internal/app"
 	"github.com/kirank55/keman/internal/config"
 	"github.com/kirank55/keman/internal/cryptoenc"
 	"github.com/kirank55/keman/internal/money"
+	"github.com/kirank55/keman/internal/tui"
 )
 
 // Version is the CLI version. The release workflow overrides it with -X.
@@ -48,11 +52,10 @@ func Run(ctx context.Context, args []string, getenv func(string) string, stdin i
 	if g.adminURL == "" {
 		g.adminURL = getenv("KEMAN_ADMIN_URL")
 	}
-	if len(rest) == 0 {
-		usage(stderr)
-		return 2
-	}
 	c := &cmd{ctx: ctx, getenv: getenv, stdin: stdin, stdout: stdout, stderr: stderr, g: g}
+	if len(rest) == 0 {
+		return c.tui()
+	}
 	switch rest[0] {
 	case "version":
 		fmt.Fprintln(stdout, Version)
@@ -197,16 +200,19 @@ func (c *cmd) init(args []string) int {
 		fmt.Fprintln(c.stderr, err.Error())
 		return 1
 	}
-	master, err := readMaster(cfg, c.getenv)
-	if err != nil {
-		fmt.Fprintln(c.stderr, err.Error())
-		return 1
-	}
 	if c.g.configPath != "" {
 		if err := config.WriteIfAbsent(c.g.configPath, cfg); err != nil {
 			fmt.Fprintln(c.stderr, err.Error())
 			return 1
 		}
+	}
+	master, noted, err := c.prepareMaster(cfg)
+	if err != nil {
+		fmt.Fprintln(c.stderr, err.Error())
+		return 1
+	}
+	if noted != "" {
+		fmt.Fprintf(c.stderr, "master key file: %s\n", noted)
 	}
 	token, err := app.Init(c.ctx, cfg, master)
 	if err != nil {
@@ -215,8 +221,122 @@ func (c *cmd) init(args []string) int {
 	}
 	fmt.Fprintf(c.stdout, "admin_token: %s\n", token)
 	fmt.Fprintln(c.stdout, "store the admin token now; it is not shown again")
-	fmt.Fprintln(c.stdout, "next: export KEMAN_ADMIN_TOKEN to that value, then run: keman serve")
+	next := "keman"
+	if c.g.configPath != "" && c.g.configPath != "keman.yaml" {
+		next += " --config " + c.g.configPath
+	}
+	fmt.Fprintf(c.stdout, "next: run %s and paste the token, or set KEMAN_ADMIN_TOKEN to skip the prompt\n", next)
 	return 0
+}
+
+// prepareMaster returns the key init will use. When the config does not
+// already name a master key file, the key is written to master.key beside
+// the config and that path is recorded, so a later keman starts without
+// KEMAN_MASTER_KEY. noted is the path just recorded.
+func (c *cmd) prepareMaster(cfg config.Config) ([]byte, string, error) {
+	master, keyErr := readMaster(cfg, c.getenv)
+	if c.g.configPath == "" {
+		if keyErr != nil {
+			return nil, "", keyErr
+		}
+		return master, "", nil
+	}
+	disk, err := config.Load(c.g.configPath, func(string) string { return "" })
+	if err != nil {
+		return nil, "", err
+	}
+	if disk.MasterKeyFile != "" {
+		if keyErr != nil {
+			return nil, "", keyErr
+		}
+		return master, "", nil
+	}
+	ok, err := app.Initialized(c.ctx, cfg.Database)
+	if err != nil {
+		return nil, "", err
+	}
+	if keyErr != nil {
+		if ok {
+			return nil, "", fmt.Errorf("database is already initialized; set KEMAN_MASTER_KEY or master_key_file")
+		}
+		master = nil
+	} else if ok {
+		if err := app.CheckMaster(c.ctx, cfg, master); err != nil {
+			return nil, "", err
+		}
+	}
+	path := cfg.MasterKeyFile
+	if path == "" {
+		path = defaultMasterKeyPath(c.g.configPath)
+	}
+	master, err = ensureKeyFile(path, master)
+	if err != nil {
+		return nil, "", err
+	}
+	if err := config.SetMasterKeyFile(c.g.configPath, path); err != nil {
+		return nil, "", err
+	}
+	return master, path, nil
+}
+
+func defaultMasterKeyPath(configPath string) string {
+	return filepath.Join(filepath.Dir(configPath), "master.key")
+}
+
+// ensureKeyFile returns the key stored at path. An existing file is kept.
+// master is written when the file is missing; a nil master is generated.
+func ensureKeyFile(path string, master []byte) ([]byte, error) {
+	b, err := os.ReadFile(path)
+	if err == nil {
+		got, err := cryptoenc.ParseMasterKey(bytes.TrimSpace(b))
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", path, err)
+		}
+		if master != nil && !bytes.Equal(master, got) {
+			return nil, fmt.Errorf("%s does not match KEMAN_MASTER_KEY", path)
+		}
+		return got, nil
+	}
+	if !os.IsNotExist(err) {
+		return nil, err
+	}
+	if master == nil {
+		master, err = newMasterKey()
+		if err != nil {
+			return nil, err
+		}
+	}
+	if err := writeKeyFile(path, master); err != nil {
+		return nil, err
+	}
+	return append([]byte(nil), master...), nil
+}
+
+func newMasterKey() ([]byte, error) {
+	b := make([]byte, cryptoenc.KeySize)
+	if _, err := rand.Read(b); err != nil {
+		return nil, err
+	}
+	return b, nil
+}
+
+func writeKeyFile(path string, key []byte) error {
+	body := base64.StdEncoding.EncodeToString(key) + "\n"
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return err
+	}
+	_, werr := f.WriteString(body)
+	cerr := f.Close()
+	if werr != nil {
+		_ = os.Remove(path)
+		return werr
+	}
+	if cerr != nil {
+		_ = os.Remove(path)
+		return cerr
+	}
+	return os.Chmod(path, 0o600)
 }
 
 func (c *cmd) serve(args []string) int {
@@ -259,6 +379,44 @@ func (c *cmd) serve(args []string) int {
 	return 0
 }
 
+func (c *cmd) tui() int {
+	if !tui.IsTerminal(c.stdout) {
+		fmt.Fprintln(c.stderr, tui.ErrNotTerminal.Error())
+		return 2
+	}
+	cfg, err := c.loadConfig()
+	if err != nil {
+		fmt.Fprintln(c.stderr, err.Error())
+		return 1
+	}
+	base := c.g.adminURL
+	if base == "" {
+		base = config.AdminURL(cfg)
+	}
+	// SIGTERM (or SIGINT outside raw mode) ends the UI normally, so a
+	// server this process started still flushes spend on the way out.
+	ctx, stopSignals := signal.NotifyContext(c.ctx, os.Interrupt, syscall.SIGTERM)
+	defer stopSignals()
+	base, stop, err := c.startOwnedServer(ctx, base, cfg)
+	if err != nil {
+		fmt.Fprintln(c.stderr, err.Error())
+		return 1
+	}
+	if stop != nil {
+		defer stop()
+	}
+	api := adminclient.New(base, c.g.adminToken)
+	if err := tui.Run(ctx, tui.NewHTTP(api), api.Base, c.stdin, c.stdout); err != nil {
+		if errors.Is(err, tui.ErrNotTerminal) {
+			fmt.Fprintln(c.stderr, err.Error())
+			return 2
+		}
+		fmt.Fprintln(c.stderr, err.Error())
+		return 1
+	}
+	return 0
+}
+
 func (c *cmd) api() (*client, error) {
 	if c.g.adminToken == "" {
 		return nil, fmt.Errorf("set --admin-token or KEMAN_ADMIN_TOKEN")
@@ -271,36 +429,7 @@ func (c *cmd) api() (*client, error) {
 		}
 		base = config.AdminURL(cfg)
 	}
-	httpClient, origin, err := adminHTTP(base)
-	if err != nil {
-		return nil, err
-	}
-	return &client{base: strings.TrimRight(origin, "/"), token: c.g.adminToken, http: httpClient}, nil
-}
-
-func adminHTTP(base string) (*http.Client, string, error) {
-	path, ok := unixPath(base)
-	if !ok {
-		return &http.Client{Timeout: 30 * time.Second}, strings.TrimRight(base, "/"), nil
-	}
-	dialer := &net.Dialer{}
-	tr := &http.Transport{
-		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-			return dialer.DialContext(ctx, "unix", path)
-		},
-	}
-	return &http.Client{Timeout: 30 * time.Second, Transport: tr}, "http://keman", nil
-}
-
-func unixPath(base string) (string, bool) {
-	switch {
-	case strings.HasPrefix(base, "unix://"):
-		return strings.TrimPrefix(base, "unix://"), true
-	case strings.HasPrefix(base, "unix:"):
-		return strings.TrimPrefix(base, "unix:"), true
-	default:
-		return "", false
-	}
+	return &client{adminclient.New(base, c.g.adminToken)}, nil
 }
 
 func (c *cmd) adminToken(args []string) int {
@@ -950,45 +1079,16 @@ func (c *cmd) printJSON(v any) int {
 	return 0
 }
 
-type client struct {
-	base  string
-	token string
-	http  *http.Client
-}
+// client is the admin API client with CLI-friendly error text.
+type client struct{ *adminclient.Client }
 
 func (c *client) call(ctx context.Context, method, path string, in any, out any) error {
-	var body io.Reader
-	if in != nil {
-		b, err := json.Marshal(in)
-		if err != nil {
-			return err
-		}
-		body = bytes.NewReader(b)
+	err := c.Call(ctx, method, path, in, out)
+	var apiErr *adminclient.APIError
+	if errors.As(err, &apiErr) {
+		return formatAPIError(apiErr.Status, apiErr.Body)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, c.base+path, body)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Authorization", "Bearer "+c.token)
-	if in != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if err != nil {
-		return err
-	}
-	if resp.StatusCode >= 300 {
-		return formatAPIError(resp.StatusCode, raw)
-	}
-	if out == nil || len(bytes.TrimSpace(raw)) == 0 {
-		return nil
-	}
-	return json.Unmarshal(raw, out)
+	return err
 }
 
 type flagSet struct {
@@ -1091,6 +1191,8 @@ func formatAPIError(status int, raw []byte) error {
 
 func usage(w io.Writer) {
 	fmt.Fprint(w, `keman `+Version+` — self-hosted API-key proxy
+
+With no command, keman opens the full-screen UI. It needs a terminal and an initialized database. It starts the local server when nothing is listening, and stops that server on exit. init writes master.key and records master_key_file. Type the admin token at startup, or set KEMAN_ADMIN_TOKEN.
 
   keman init
   keman serve

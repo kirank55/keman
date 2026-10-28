@@ -1,8 +1,12 @@
 /bin/
 /keman
+/master.key
 *.db
 *.db-wal
 *.db-shm
 /dist/
 /coverage.out
 .quickstart/
+/keman.log
+/keman.yaml
+.tui-try/

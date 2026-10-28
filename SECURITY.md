@@ -14,7 +14,7 @@ Open a private security advisory on the GitHub repository, or contact the mainta
 
 ## What you must protect
 
-- The master key (`KEMAN_MASTER_KEY` or `master_key_file`). Anyone with the master key and the database can unwrap credential secrets.
+- The master key. `init` stores it in `master.key` (mode 0600) next to the config and sets `master_key_file`, unless that field is already set. Anyone with the master key and the database can unwrap credential secrets.
 - The admin token. It is shown once by `init` and by `admin-token rotate`. The admin listener must stay on localhost or a Unix socket.
 - The SQLite file. It holds ciphertext, spend counters, events, and the wrapped data key.
 - The process memory. Plaintext credentials are cached so the proxy can swap them onto requests. A memory dump defeats the encryption. Run the process as a non-root user, on a read-only root filesystem where you can, and with egress only to the upstream hosts you configured.

@@ -6,6 +6,7 @@ package pathmatch
 import (
 	"fmt"
 	"strings"
+	"unicode"
 )
 
 type Rule struct {
@@ -25,6 +26,11 @@ func ParseLine(line string) (Rule, error) {
 	}
 	if !strings.HasPrefix(pattern, "/") {
 		return Rule{}, fmt.Errorf("path %q must start with /", pattern)
+	}
+	// One entry is one line: no whitespace or control characters, which
+	// also keeps ParseList and ParseLine in agreement.
+	if strings.IndexFunc(method+pattern, func(r rune) bool { return unicode.IsSpace(r) || unicode.IsControl(r) }) >= 0 {
+		return Rule{}, fmt.Errorf("allowlist entry %q must be METHOD PATH on one line", line)
 	}
 	segs := split(pattern)
 	for i, s := range segs {

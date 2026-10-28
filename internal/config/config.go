@@ -270,7 +270,7 @@ func WriteIfAbsent(path string, cfg Config) error {
 	}
 	if _, err := os.Stat(path); err == nil {
 		return nil
-	} else if err != nil && !os.IsNotExist(err) {
+	} else if !os.IsNotExist(err) {
 		return err
 	}
 	if dir := filepath.Dir(path); dir != "" && dir != "." {
@@ -282,7 +282,79 @@ func WriteIfAbsent(path string, cfg Config) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, b, 0o600)
+	return writePrivate(path, b)
+}
+
+// SetMasterKeyFile records keyFile in the config at path.
+// A missing file is created from the defaults.
+func SetMasterKeyFile(path, keyFile string) error {
+	keyFile = strings.TrimSpace(keyFile)
+	if keyFile == "" {
+		return fmt.Errorf("master key file path is empty")
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return err
+		}
+		cfg := Defaults()
+		cfg.MasterKeyFile = keyFile
+		return WriteIfAbsent(path, cfg)
+	}
+	scalar, err := yamlScalar(keyFile)
+	if err != nil {
+		return err
+	}
+	line := "master_key_file: " + scalar
+	nl := "\n"
+	text := string(b)
+	if strings.Contains(text, "\r\n") {
+		nl = "\r\n"
+	}
+	parts := strings.Split(text, nl)
+	replaced := false
+	for i, ln := range parts {
+		if !replaced && strings.HasPrefix(strings.TrimSpace(ln), "master_key_file:") {
+			parts[i] = line
+			replaced = true
+		}
+	}
+	if !replaced {
+		if len(parts) > 0 && parts[len(parts)-1] == "" {
+			parts = append(parts[:len(parts)-1], line, "")
+		} else {
+			parts = append(parts, line)
+		}
+	}
+	out := strings.Join(parts, nl)
+	if !strings.HasSuffix(out, nl) {
+		out += nl
+	}
+	return writePrivate(path, []byte(out))
+}
+
+func yamlScalar(s string) (string, error) {
+	b, err := yaml.Marshal(s)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(b)), nil
+}
+
+func writePrivate(path string, b []byte) error {
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+		return err
+	}
+	if err := os.Chmod(tmp, 0o600); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return nil
 }
 
 // Encode renders a readable YAML config.
@@ -300,7 +372,7 @@ func Encode(cfg Config) ([]byte, error) {
 	b.WriteString("# Keman server settings. Keys and policies live in the database.\n")
 	fmt.Fprintf(&b, "proxy_listen: %s\n", cfg.ProxyListen)
 	fmt.Fprintf(&b, "admin_listen: %s\n", cfg.AdminListen)
-	fmt.Fprintf(&b, "database: %s\n", cfg.Database)
+	fmt.Fprintf(&b, "database: %s\n", quote(cfg.Database))
 	if len(cfg.TrustedProxies) == 0 {
 		b.WriteString("trusted_proxies: []\n")
 	} else {
@@ -310,16 +382,16 @@ func Encode(cfg Config) ([]byte, error) {
 		}
 	}
 	if cfg.GeoIPCountryDB != "" {
-		fmt.Fprintf(&b, "geoip_country_db: %s\n", cfg.GeoIPCountryDB)
+		fmt.Fprintf(&b, "geoip_country_db: %s\n", quote(cfg.GeoIPCountryDB))
 	}
 	if cfg.GeoIPASNDB != "" {
-		fmt.Fprintf(&b, "geoip_asn_db: %s\n", cfg.GeoIPASNDB)
+		fmt.Fprintf(&b, "geoip_asn_db: %s\n", quote(cfg.GeoIPASNDB))
 	}
 	if cfg.PricesFile != "" {
-		fmt.Fprintf(&b, "prices_file: %s\n", cfg.PricesFile)
+		fmt.Fprintf(&b, "prices_file: %s\n", quote(cfg.PricesFile))
 	}
 	if cfg.MasterKeyFile != "" {
-		fmt.Fprintf(&b, "master_key_file: %s\n", cfg.MasterKeyFile)
+		fmt.Fprintf(&b, "master_key_file: %s\n", quote(cfg.MasterKeyFile))
 	}
 	fmt.Fprintf(&b, "default_reservation_microusd: %d\n", cfg.DefaultReservation)
 	fmt.Fprintf(&b, "event_queue_size: %d\n", cfg.EventQueueSize)
@@ -334,6 +406,15 @@ func Encode(cfg Config) ([]byte, error) {
 	fmt.Fprintf(&b, "upstream_response_header_timeout: %s\n", formatDuration(cfg.UpstreamHeaderTimeout))
 	fmt.Fprintf(&b, "invalid_key_rpm: %d\n", cfg.InvalidKeyRPM)
 	return []byte(b.String()), nil
+}
+
+// quote renders s as a YAML scalar, quoting it only when needed.
+func quote(s string) string {
+	q, err := yamlScalar(s)
+	if err != nil {
+		return strconv.Quote(s)
+	}
+	return q
 }
 
 func formatDuration(d time.Duration) string {
