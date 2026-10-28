@@ -5,13 +5,18 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/kirank55/keman/internal/app"
@@ -20,7 +25,8 @@ import (
 	"github.com/kirank55/keman/internal/money"
 )
 
-const Version = "0.1.0-beta"
+// Version is the CLI version. The release workflow overrides it with -X.
+var Version = "0.1.0-beta"
 
 // Run executes one CLI invocation. It returns a process exit code.
 func Run(ctx context.Context, args []string, getenv func(string) string, stdin io.Reader, stdout, stderr io.Writer) int {
@@ -118,9 +124,6 @@ func (g *globals) parse(args []string) ([]string, error) {
 			}
 			g.adminToken = v
 			i = ni
-		case strings.HasPrefix(a, "--") && len(rest) == 0:
-			rest = append(rest, args[i:]...)
-			return rest, nil
 		default:
 			rest = append(rest, a)
 		}
@@ -175,13 +178,13 @@ func readMaster(cfg config.Config, getenv func(string) string) ([]byte, error) {
 		path = getenv("KEMAN_MASTER_KEY_FILE")
 	}
 	if path == "" {
-		return nil, fmt.Errorf("set KEMAN_MASTER_KEY or master_key_file")
+		return nil, fmt.Errorf("set KEMAN_MASTER_KEY or master_key_file (a 32-byte key, or its base64/hex form)")
 	}
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	return cryptoenc.ParseMasterKey(bytes.TrimSpace(b))
+	return cryptoenc.ParseMasterKey(b)
 }
 
 func (c *cmd) init(args []string) int {
@@ -200,7 +203,7 @@ func (c *cmd) init(args []string) int {
 		return 1
 	}
 	if c.g.configPath != "" {
-		if err := config.WriteDefault(c.g.configPath); err != nil {
+		if err := config.WriteIfAbsent(c.g.configPath, cfg); err != nil {
 			fmt.Fprintln(c.stderr, err.Error())
 			return 1
 		}
@@ -211,7 +214,8 @@ func (c *cmd) init(args []string) int {
 		return 1
 	}
 	fmt.Fprintf(c.stdout, "admin_token: %s\n", token)
-	fmt.Fprintln(c.stderr, "store the admin token now; it is not shown again")
+	fmt.Fprintln(c.stdout, "store the admin token now; it is not shown again")
+	fmt.Fprintln(c.stdout, "next: export KEMAN_ADMIN_TOKEN to that value, then run: keman serve")
 	return 0
 }
 
@@ -240,8 +244,14 @@ func (c *cmd) serve(args []string) int {
 		fmt.Fprintln(c.stderr, err.Error())
 		return 1
 	}
+	ctx, stop := signal.NotifyContext(c.ctx, os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if !config.AdminIsLocal(cfg) {
+		fmt.Fprintln(c.stderr, "warning: admin_listen is not loopback or a Unix socket; the admin token is the only protection")
+	}
 	fmt.Fprintf(c.stdout, "proxy %s\nadmin %s\n", proc.ProxyURL(), proc.AdminURL())
-	<-c.ctx.Done()
+	fmt.Fprintln(c.stderr, "press Ctrl+C to stop; CLI mutations need KEMAN_ADMIN_TOKEN")
+	<-ctx.Done()
 	if err := proc.Close(); err != nil {
 		fmt.Fprintln(c.stderr, err.Error())
 		return 1
@@ -250,14 +260,47 @@ func (c *cmd) serve(args []string) int {
 }
 
 func (c *cmd) api() (*client, error) {
-	base := c.g.adminURL
-	if base == "" {
-		base = "http://127.0.0.1:8081"
-	}
 	if c.g.adminToken == "" {
 		return nil, fmt.Errorf("set --admin-token or KEMAN_ADMIN_TOKEN")
 	}
-	return &client{base: strings.TrimRight(base, "/"), token: c.g.adminToken, http: &http.Client{Timeout: 30 * time.Second}}, nil
+	base := c.g.adminURL
+	if base == "" {
+		cfg, err := c.loadConfig()
+		if err != nil {
+			return nil, err
+		}
+		base = config.AdminURL(cfg)
+	}
+	httpClient, origin, err := adminHTTP(base)
+	if err != nil {
+		return nil, err
+	}
+	return &client{base: strings.TrimRight(origin, "/"), token: c.g.adminToken, http: httpClient}, nil
+}
+
+func adminHTTP(base string) (*http.Client, string, error) {
+	path, ok := unixPath(base)
+	if !ok {
+		return &http.Client{Timeout: 30 * time.Second}, strings.TrimRight(base, "/"), nil
+	}
+	dialer := &net.Dialer{}
+	tr := &http.Transport{
+		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return dialer.DialContext(ctx, "unix", path)
+		},
+	}
+	return &http.Client{Timeout: 30 * time.Second, Transport: tr}, "http://keman", nil
+}
+
+func unixPath(base string) (string, bool) {
+	switch {
+	case strings.HasPrefix(base, "unix://"):
+		return strings.TrimPrefix(base, "unix://"), true
+	case strings.HasPrefix(base, "unix:"):
+		return strings.TrimPrefix(base, "unix:"), true
+	default:
+		return "", false
+	}
 }
 
 func (c *cmd) adminToken(args []string) int {
@@ -278,6 +321,7 @@ func (c *cmd) adminToken(args []string) int {
 		return 1
 	}
 	fmt.Fprintf(c.stdout, "admin_token: %s\n", out.Token)
+	fmt.Fprintln(c.stderr, "store the admin token now; it is not shown again")
 	return 0
 }
 
@@ -304,18 +348,22 @@ func (c *cmd) rekey(args []string) int {
 		fmt.Fprintln(c.stderr, err.Error())
 		return 1
 	}
-	body := map[string]string{"old_master_key": string(oldB), "new_master_key": string(newB)}
+	body := map[string]string{
+		"old_master_key": base64.StdEncoding.EncodeToString(oldB),
+		"new_master_key": base64.StdEncoding.EncodeToString(newB),
+	}
 	if err := api.call(c.ctx, http.MethodPost, "/v1/rekey", body, nil); err != nil {
 		fmt.Fprintln(c.stderr, err.Error())
 		return 1
 	}
 	fmt.Fprintln(c.stdout, "rekey ok")
+	fmt.Fprintln(c.stderr, "use the new master key before the next restart; the old one will not unwrap the data key")
 	return 0
 }
 
 func masterValue(path, env string) ([]byte, error) {
 	if strings.TrimSpace(env) != "" {
-		return []byte(strings.TrimSpace(env)), nil
+		return cryptoenc.ParseMasterKey([]byte(env))
 	}
 	if path == "" {
 		return nil, fmt.Errorf("master key file or environment variable is required")
@@ -324,7 +372,7 @@ func masterValue(path, env string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return bytes.TrimSpace(b), nil
+	return cryptoenc.ParseMasterKey(b)
 }
 
 func (c *cmd) upstream(args []string) int {
@@ -421,6 +469,10 @@ func (c *cmd) credential(args []string) int {
 			fmt.Fprintln(c.stderr, err.Error())
 			return 2
 		}
+		if body["name"] == "" {
+			fmt.Fprintln(c.stderr, "credential add requires --name")
+			return 2
+		}
 		id, err := c.resolveUpstream(api, up)
 		if err != nil {
 			fmt.Fprintln(c.stderr, err.Error())
@@ -454,8 +506,13 @@ func (c *cmd) credential(args []string) int {
 			fmt.Fprintln(c.stderr, err.Error())
 			return 2
 		}
+		id, err := c.resolveCredential(api, args[1])
+		if err != nil {
+			fmt.Fprintln(c.stderr, err.Error())
+			return 1
+		}
 		var out any
-		if err := api.call(c.ctx, http.MethodPost, "/v1/credentials/"+args[1]+"/rotate", map[string]string{"secret": secret}, &out); err != nil {
+		if err := api.call(c.ctx, http.MethodPost, "/v1/credentials/"+id+"/rotate", map[string]string{"secret": secret}, &out); err != nil {
 			fmt.Fprintln(c.stderr, err.Error())
 			return 1
 		}
@@ -489,10 +546,19 @@ func (c *cmd) key(args []string) int {
 		cred := f.str("credential")
 		body := map[string]any{"name": f.str("name"), "kind": f.str("kind")}
 		if exp := f.str("expires"); exp != "" {
-			body["expires_at"] = exp
+			t, err := time.Parse(time.RFC3339, exp)
+			if err != nil {
+				fmt.Fprintln(c.stderr, "--expires must be RFC3339, for example 2026-12-31T23:59:59Z")
+				return 2
+			}
+			body["expires_at"] = t.UTC().Format(time.RFC3339)
 		}
 		if err := f.done(); err != nil {
 			fmt.Fprintln(c.stderr, err.Error())
+			return 2
+		}
+		if body["name"] == "" {
+			fmt.Fprintln(c.stderr, "key create requires --name")
 			return 2
 		}
 		id, err := c.resolveCredential(api, cred)
@@ -506,14 +572,20 @@ func (c *cmd) key(args []string) int {
 			fmt.Fprintln(c.stderr, err.Error())
 			return 1
 		}
+		fmt.Fprintln(c.stderr, "store the virtual key (token) now; it is not shown again")
 		return c.printJSON(out)
 	case "disable", "enable", "revoke":
 		if len(args) < 2 {
-			fmt.Fprintf(c.stderr, "usage: keman key %s <id>\n", args[0])
+			fmt.Fprintf(c.stderr, "usage: keman key %s <id-or-name>\n", args[0])
 			return 2
 		}
+		id, err := c.resolveKey(api, args[1])
+		if err != nil {
+			fmt.Fprintln(c.stderr, err.Error())
+			return 1
+		}
 		var out any
-		if err := api.call(c.ctx, http.MethodPost, "/v1/keys/"+args[1]+"/"+args[0], map[string]any{}, &out); err != nil {
+		if err := api.call(c.ctx, http.MethodPost, "/v1/keys/"+id+"/"+args[0], map[string]any{}, &out); err != nil {
 			fmt.Fprintln(c.stderr, err.Error())
 			return 1
 		}
@@ -540,8 +612,13 @@ func (c *cmd) policy(args []string) int {
 			fmt.Fprintln(c.stderr, "usage: keman policy dry-run <key>")
 			return 2
 		}
+		id, err := c.resolveKey(api, args[1])
+		if err != nil {
+			fmt.Fprintln(c.stderr, err.Error())
+			return 1
+		}
 		var out any
-		if err := api.call(c.ctx, http.MethodGet, "/v1/keys/"+args[1]+"/dry-run", nil, &out); err != nil {
+		if err := api.call(c.ctx, http.MethodGet, "/v1/keys/"+id+"/dry-run", nil, &out); err != nil {
 			fmt.Fprintln(c.stderr, err.Error())
 			return 1
 		}
@@ -565,7 +642,12 @@ func (c *cmd) policy(args []string) int {
 			fmt.Fprintln(c.stderr, err.Error())
 			return 2
 		}
-		cur, err := c.keyPolicy(api, args[1])
+		keyID, err := c.resolveKey(api, args[1])
+		if err != nil {
+			fmt.Fprintln(c.stderr, err.Error())
+			return 1
+		}
+		cur, err := c.keyPolicy(api, keyID)
 		if err != nil {
 			fmt.Fprintln(c.stderr, err.Error())
 			return 1
@@ -614,7 +696,7 @@ func (c *cmd) policy(args []string) int {
 		}
 		cur.Confirm = yes
 		var out any
-		if err := api.call(c.ctx, http.MethodPut, "/v1/keys/"+args[1]+"/policy", cur, &out); err != nil {
+		if err := api.call(c.ctx, http.MethodPut, "/v1/keys/"+keyID+"/policy", cur, &out); err != nil {
 			fmt.Fprintln(c.stderr, err.Error())
 			return 1
 		}
@@ -736,7 +818,12 @@ func (c *cmd) detection(args []string) int {
 	}
 	path := "/v1/detections"
 	if key != "" {
-		path += "?key_id=" + key
+		id, err := c.resolveKey(api, key)
+		if err != nil {
+			fmt.Fprintln(c.stderr, err.Error())
+			return 1
+		}
+		path += "?key_id=" + url.QueryEscape(id)
 	}
 	var out any
 	if err := api.call(c.ctx, http.MethodGet, path, nil, &out); err != nil {
@@ -805,6 +892,35 @@ func (c *cmd) resolveUpstream(api *client, nameOrID string) (string, error) {
 	return "", fmt.Errorf("upstream %s not found", nameOrID)
 }
 
+func (c *cmd) resolveKey(api *client, nameOrID string) (string, error) {
+	if nameOrID == "" {
+		return "", fmt.Errorf("virtual key id or name is required")
+	}
+	var list []struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+	if err := api.call(c.ctx, http.MethodGet, "/v1/keys", nil, &list); err != nil {
+		return "", err
+	}
+	var names []string
+	for _, k := range list {
+		if k.ID == nameOrID {
+			return k.ID, nil
+		}
+		if k.Name == nameOrID {
+			names = append(names, k.ID)
+		}
+	}
+	if len(names) == 1 {
+		return names[0], nil
+	}
+	if len(names) > 1 {
+		return "", fmt.Errorf("virtual key name %s is ambiguous; use the id", nameOrID)
+	}
+	return "", fmt.Errorf("virtual key %s not found", nameOrID)
+}
+
 func (c *cmd) resolveCredential(api *client, nameOrID string) (string, error) {
 	if nameOrID == "" {
 		return "", fmt.Errorf("--credential is required")
@@ -867,7 +983,7 @@ func (c *client) call(ctx context.Context, method, path string, in any, out any)
 		return err
 	}
 	if resp.StatusCode >= 300 {
-		return fmt.Errorf("%s", strings.TrimSpace(string(raw)))
+		return formatAPIError(resp.StatusCode, raw)
 	}
 	if out == nil || len(bytes.TrimSpace(raw)) == 0 {
 		return nil
@@ -941,6 +1057,38 @@ func (f *flagSet) done() error {
 	return nil
 }
 
+func formatAPIError(status int, raw []byte) error {
+	var ae struct {
+		Error struct {
+			Type    string `json:"type"`
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+		DryRun json.RawMessage `json:"dry_run"`
+	}
+	if json.Unmarshal(raw, &ae) == nil && ae.Error.Message != "" {
+		msg := ae.Error.Message
+		if ae.Error.Code != "" {
+			msg = ae.Error.Code + ": " + msg
+		}
+		if len(bytes.TrimSpace(ae.DryRun)) > 0 && string(ae.DryRun) != "null" {
+			var buf bytes.Buffer
+			if json.Indent(&buf, ae.DryRun, "", "  ") == nil {
+				msg += "\n" + buf.String()
+			}
+			if ae.Error.Code == "confirm_required" {
+				msg += "\nre-run with --yes to confirm"
+			}
+		}
+		return fmt.Errorf("%s", msg)
+	}
+	text := strings.TrimSpace(string(raw))
+	if text == "" {
+		return fmt.Errorf("admin API returned HTTP %d", status)
+	}
+	return fmt.Errorf("%s", text)
+}
+
 func usage(w io.Writer) {
 	fmt.Fprint(w, `keman `+Version+` — self-hosted API-key proxy
 
@@ -949,22 +1097,29 @@ func usage(w io.Writer) {
   keman admin-token rotate
   keman rekey --old-master-key-file old --new-master-key-file new
   keman upstream add --name openai --profile openai --host api.openai.com --port 443 --tls
+  keman upstream add --name stripe --profile generic --host api.stripe.com --port 443 --tls --path "POST /v1/charges"
   keman upstream list
-  keman credential add --upstream openai --name primary --secret-file ./secret
+  keman credential add --upstream openai --name primary --header "Authorization: Bearer {key}" --secret-file ./secret
   keman credential list
-  keman credential rotate <id> --secret-env OPENAI_API_KEY
+  keman credential rotate <id-or-name> --secret-env OPENAI_API_KEY
   keman key create --credential primary --name laptop
+  keman key create --credential primary --name decoy --kind canary
+  keman key create --credential primary --name intern --expires 2026-12-31T23:59:59Z
   keman key list
-  keman key disable|enable|revoke <id>
-  keman policy set <id> --daily-usd 1.50 --mode alert_only
-  keman policy dry-run <id>
+  keman key disable|enable|revoke <id-or-name>
+  keman policy set <id-or-name> --daily-usd 1.50 --rpm 60 --mode alert_only
+  keman policy set <id-or-name> --mode auto_disable --yes
+  keman policy dry-run <id-or-name>
   keman alert add --kind webhook --url https://example --secret-file ./hook
   keman alert list
   keman detection list [--key id]
   keman audit list
   keman version
 
-Global flags: --config --admin-url --admin-token
+Global flags (before or after the command): --config PATH --admin-url URL --admin-token TOKEN
+  KEMAN_ADMIN_TOKEN, KEMAN_ADMIN_URL, KEMAN_MASTER_KEY, KEMAN_DATABASE override the same settings.
+  --admin-url defaults to admin_listen in --config (unix:// sockets are supported).
 Secrets belong in --secret-env or --secret-file, not in the command line.
+Official OpenAI SDKs need base_url http://127.0.0.1:8080/v1 (note the /v1). Anthropic SDKs use http://127.0.0.1:8080.
 `)
 }

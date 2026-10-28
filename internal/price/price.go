@@ -132,7 +132,7 @@ func (t *Table) Reserve(model string, bodyBytes int64, maxTokens *int64, default
 		if defaultReservation < 0 {
 			defaultReservation = 0
 		}
-		return hold + defaultReservation, true
+		return money.Add(hold, defaultReservation), true
 	}
-	return hold + money.TokenCostUp(*maxTokens, m.Output), true
+	return money.Add(hold, money.TokenCostUp(*maxTokens, m.Output)), true
 }

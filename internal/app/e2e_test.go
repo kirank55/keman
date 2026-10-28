@@ -210,6 +210,7 @@ func TestSpendFailClosed(t *testing.T) {
 	if resp.StatusCode != 200 {
 		t.Fatalf("warm %d %s", resp.StatusCode, raw)
 	}
+	env.waitDirtySpend(t)
 	env.proc.SetSpendSaverForTest(func(context.Context, []model.SpendRow) error {
 		return errors.New("disk")
 	})
@@ -234,6 +235,85 @@ func TestCLIInit(t *testing.T) {
 		return ""
 	}, nil, &stdout, &stderr)
 	if code != 0 || !strings.Contains(stdout.String(), "admin_token: kma_") {
+		t.Fatalf("code %d\n%s\n%s", code, stdout.String(), stderr.String())
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "keman.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), filepath.Join(dir, "keman.db")) {
+		t.Fatalf("init yaml missing database path:\n%s", raw)
+	}
+}
+
+func TestOpenMissingDatabaseDoesNotCreateFile(t *testing.T) {
+	dir := t.TempDir()
+	cfg := config.Defaults()
+	cfg.Database = filepath.Join(dir, "missing.db")
+	cfg.ProxyListen = "127.0.0.1:0"
+	cfg.AdminListen = "127.0.0.1:0"
+	_, err := app.Open(context.Background(), cfg, bytes.Repeat([]byte{1}, 32))
+	if err == nil || !strings.Contains(err.Error(), "not initialized") {
+		t.Fatalf("err %v", err)
+	}
+	if _, err := os.Stat(cfg.Database); !os.IsNotExist(err) {
+		t.Fatal("Open created a database file")
+	}
+}
+
+func TestAdminRejectsEmptyNames(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"ok":true}`)
+	}))
+	defer up.Close()
+	env := startStack(t, up.URL, nil, nil, nil)
+	defer env.close()
+	body, _ := json.Marshal(map[string]any{"name": "", "profile": "openai", "host": "api.openai.com", "port": 443, "tls": true})
+	req, err := http.NewRequest(http.MethodPost, env.admin+"/v1/upstreams", bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+env.token)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusBadRequest || !strings.Contains(string(raw), "name") {
+		t.Fatalf("%d %s", resp.StatusCode, raw)
+	}
+}
+
+func TestCLIUnixAdmin(t *testing.T) {
+	dir := t.TempDir()
+	sock := filepath.Join(dir, "admin.sock")
+	cfg := config.Defaults()
+	cfg.Database = filepath.Join(dir, "keman.db")
+	cfg.ProxyListen = "127.0.0.1:0"
+	cfg.AdminListen = sock
+	master := bytes.Repeat([]byte{7}, 32)
+	token, err := app.Init(context.Background(), cfg, master)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proc, err := app.Open(context.Background(), cfg, master)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := proc.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer proc.Close()
+	if !strings.HasPrefix(proc.AdminURL(), "unix://") {
+		t.Fatalf("admin url %s", proc.AdminURL())
+	}
+	var stdout, stderr bytes.Buffer
+	code := cli.Run(context.Background(), []string{
+		"--admin-url", proc.AdminURL(), "--admin-token", token, "upstream", "list",
+	}, nil, nil, &stdout, &stderr)
+	if code != 0 {
 		t.Fatalf("code %d\n%s\n%s", code, stdout.String(), stderr.String())
 	}
 }
@@ -330,6 +410,20 @@ func startStack(t *testing.T, upstream string, trusted []string, log *slog.Logge
 		s.upstream = created["id"].(string)
 	}
 	return s
+}
+
+func (s *stack) waitDirtySpend(t *testing.T) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		if rows := s.proc.DirtySpendForTest(); len(rows) > 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("spend was not recorded after proxy request")
+		}
+		time.Sleep(time.Millisecond)
+	}
 }
 
 func (s *stack) close() {

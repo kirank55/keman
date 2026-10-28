@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -365,5 +366,160 @@ func TestAnthropicStreamUsage(t *testing.T) {
 	}
 	if !strings.Contains(string(b), "message_delta") {
 		t.Fatalf("body %s", b)
+	}
+}
+
+func TestOfficialSDKStreamTranscript(t *testing.T) {
+	var seenBody []byte
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seenBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{\"role\":\"assistant\",\"content\":\"Hello\"},\"finish_reason\":null}]}\n\n")
+		_, _ = io.WriteString(w, "data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":8,\"completion_tokens\":1,\"total_tokens\":9}}\n\n")
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer up.Close()
+	h := newHarness(t, up.URL, "openai", nil)
+	cap := int64(money.Dollar)
+	pol, err := state.ParsePolicy(model.Policy{KeyID: h.id, DailyCapMicro: &cap, Mode: model.ModeAlertOnly})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.state.PutPolicy(pol)
+	resp := h.do(t, http.MethodPost, "/v1/chat/completions", `{"model":"gpt-4o-mini","stream":true,"messages":[{"role":"user","content":"hi"}]}`, nil)
+	b, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != 200 {
+		t.Fatalf("%d %s", resp.StatusCode, b)
+	}
+	if !strings.Contains(string(seenBody), `"include_usage":true`) {
+		t.Fatalf("did not inject include_usage: %s", seenBody)
+	}
+	if !strings.Contains(string(b), `"content":"Hello"`) || !strings.Contains(string(b), `"prompt_tokens":8`) || !strings.Contains(string(b), "[DONE]") {
+		t.Fatalf("client missing SDK transcript: %s", b)
+	}
+	rows := h.state.DirtySpend()
+	if len(rows) != 2 {
+		t.Fatalf("spend rows %d %+v", len(rows), rows)
+	}
+	for _, row := range rows {
+		if row.Micro <= 0 || row.Micro >= 100_000 {
+			t.Fatalf("expected actual usage cost, got %+v", row)
+		}
+	}
+}
+
+func TestRedirectDoesNotChargeReservation(t *testing.T) {
+	n := 0
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n++
+		if n == 1 {
+			w.Header().Set("Location", "/v1/models")
+			w.WriteHeader(http.StatusFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"usage":{"prompt_tokens":1,"completion_tokens":1}}`)
+	}))
+	defer up.Close()
+	h := newHarness(t, up.URL, "openai", nil)
+	cap := int64(money.Dollar)
+	pol, err := state.ParsePolicy(model.Policy{KeyID: h.id, DailyCapMicro: &cap, Mode: model.ModeAlertOnly})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.state.PutPolicy(pol)
+	resp := h.do(t, http.MethodPost, "/v1/chat/completions", `{"model":"gpt-4o-mini"}`, nil)
+	if resp.StatusCode != http.StatusFound {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("redirect %d %s", resp.StatusCode, b)
+	}
+	if rows := h.state.DirtySpend(); len(rows) != 0 {
+		t.Fatalf("redirect charged %v", rows)
+	}
+	resp = h.do(t, http.MethodPost, "/v1/chat/completions", `{"model":"gpt-4o-mini"}`, nil)
+	if resp.StatusCode != 200 {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("second %d %s", resp.StatusCode, b)
+	}
+}
+
+func TestCorruptUpstreamAllowlistFailsClosed(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("must not reach upstream")
+	}))
+	defer up.Close()
+	h := newHarness(t, up.URL, "openai", nil)
+	cur, _ := h.state.Upstream("up_1")
+	cur.PathAllowlist = []string{"NOT A VALID RULE"}
+	h.state.PutUpstream(cur)
+	resp := h.do(t, http.MethodGet, "/v1/models", "", nil)
+	if resp.StatusCode != http.StatusForbidden || resp.Header.Get("X-Keman-Error") != "path_not_allowed" {
+		t.Fatalf("%d %s", resp.StatusCode, resp.Header.Get("X-Keman-Error"))
+	}
+}
+
+func TestSpendCapRejectsOverflowReservation(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fl, _ := w.(http.Flusher)
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"x\"}}]}\n\n")
+		fl.Flush()
+		close(started)
+		<-release
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer up.Close()
+	h := newHarness(t, up.URL, "openai", nil)
+	cap := int64(1_000_000)
+	pol, err := state.ParsePolicy(model.Policy{KeyID: h.id, DailyCapMicro: &cap, Mode: model.ModeAlertOnly})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.state.PutPolicy(pol)
+	srv := httptest.NewServer(h.proxy)
+	defer srv.Close()
+	go func() {
+		req, _ := http.NewRequest(http.MethodPost, srv.URL+"/v1/chat/completions", strings.NewReader(`{"model":"gpt-4o-mini","stream":true}`))
+		req.Header.Set("Authorization", "Bearer "+h.token)
+		resp, err := http.DefaultClient.Do(req)
+		if err == nil {
+			_, _ = io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
+		}
+	}()
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("first request did not start")
+	}
+	body := `{"model":"gpt-4o-mini","max_tokens":` + strconv.FormatInt(math.MaxInt64, 10) + `}`
+	req, _ := http.NewRequest(http.MethodPost, srv.URL+"/v1/chat/completions", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+h.token)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusForbidden || resp.Header.Get("X-Keman-Error") != "spend_cap_reached" {
+		t.Fatalf("overflow %d %s %s", resp.StatusCode, resp.Header.Get("X-Keman-Error"), raw)
+	}
+	close(release)
+}
+
+func TestInvalidKeyDoesNotRegisterSecret(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Error("reached upstream")
+	}))
+	defer up.Close()
+	h := newHarness(t, up.URL, "openai", nil)
+	secrets := &redact.Secrets{}
+	h.proxy.Secrets = secrets
+	h.token = "kmn_abcd1234_" + strings.Repeat("s", 32)
+	_ = h.do(t, http.MethodGet, "/v1/models", "", nil)
+	if secrets.Len() != 0 {
+		t.Fatalf("invalid key was stored for redaction (%d)", secrets.Len())
 	}
 }

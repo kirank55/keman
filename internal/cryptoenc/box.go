@@ -91,13 +91,23 @@ func UnwrapDEK(master, nonce, wrapped []byte) ([]byte, error) {
 }
 
 // ParseMasterKey accepts standard base64, raw base64, hex, or 32 raw bytes.
+// A buffer that is already 32 bytes is used as-is, including trailing
+// spaces that are part of a binary key. A single trailing newline is
+// stripped next so `openssl rand 32` files that gained a newline still
+// work. Spaces are only trimmed when decoding a text encoding.
 func ParseMasterKey(b []byte) ([]byte, error) {
-	s := trimSpace(b)
-	if len(s) == KeySize {
+	if len(b) == KeySize {
 		out := make([]byte, KeySize)
-		copy(out, s)
+		copy(out, b)
 		return out, nil
 	}
+	nl := trimCRLF(b)
+	if len(nl) == KeySize {
+		out := make([]byte, KeySize)
+		copy(out, nl)
+		return out, nil
+	}
+	s := trimSpace(b)
 	if key, err := decodeBase64(s); err == nil && len(key) == KeySize {
 		return key, nil
 	}
@@ -105,6 +115,18 @@ func ParseMasterKey(b []byte) ([]byte, error) {
 		return key, nil
 	}
 	return nil, fmt.Errorf("%w (got %d bytes after decode)", ErrKeySize, len(s))
+}
+
+func trimCRLF(b []byte) []byte {
+	i := 0
+	j := len(b)
+	for i < j && (b[i] == '\n' || b[i] == '\r') {
+		i++
+	}
+	for j > i && (b[j-1] == '\n' || b[j-1] == '\r') {
+		j--
+	}
+	return b[i:j]
 }
 
 func trimSpace(b []byte) []byte {

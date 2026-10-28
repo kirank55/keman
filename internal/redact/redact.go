@@ -9,25 +9,46 @@ import (
 	"sync"
 )
 
-var virtualKey = regexp.MustCompile(`kmn_[0-9A-Za-z]{8}_[0-9A-Za-z]+`)
+var (
+	virtualKey = regexp.MustCompile(`kmn_[0-9A-Za-z]{8}_[0-9A-Za-z]+`)
+	adminToken = regexp.MustCompile(`kma_[0-9A-Za-z]+`)
+)
 
 // Secrets is a set of extra strings that must never be logged.
 type Secrets struct {
 	mu    sync.RWMutex
 	items []string
+	have  map[string]struct{}
 }
 
 func (s *Secrets) Add(secret string) {
-	if len(secret) < 4 {
+	if s == nil || len(secret) < 4 {
 		return
 	}
 	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.have == nil {
+		s.have = map[string]struct{}{}
+	}
+	if _, ok := s.have[secret]; ok {
+		return
+	}
+	s.have[secret] = struct{}{}
 	s.items = append(s.items, secret)
-	s.mu.Unlock()
+}
+
+func (s *Secrets) Len() int {
+	if s == nil {
+		return 0
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return len(s.items)
 }
 
 func (s *Secrets) scrub(msg string) string {
 	msg = virtualKey.ReplaceAllString(msg, "kmn_[redacted]")
+	msg = adminToken.ReplaceAllString(msg, "kma_[redacted]")
 	if s == nil {
 		return msg
 	}
@@ -96,6 +117,11 @@ func (h *Handler) scrubAttr(a slog.Attr) slog.Attr {
 	case slog.KindGroup:
 		gs := a.Value.Group()
 		a.Value = slog.GroupValue(h.scrubAttrs(gs)...)
+	default:
+		s := a.Value.String()
+		if scrubbed := h.secrets.scrub(s); scrubbed != s {
+			a.Value = slog.StringValue(scrubbed)
+		}
 	}
 	return a
 }

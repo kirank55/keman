@@ -3,6 +3,7 @@ package money
 
 import (
 	"fmt"
+	"math"
 	"math/big"
 	"strings"
 )
@@ -59,11 +60,17 @@ func ParseUSD(s string) (int64, error) {
 // FormatUSD renders microdollars as a dollar string with up to 6 decimals.
 func FormatUSD(micro int64) string {
 	neg := micro < 0
-	if neg {
-		micro = -micro
+	var u uint64
+	if micro == math.MinInt64 {
+		neg = true
+		u = 1 << 63
+	} else if neg {
+		u = uint64(-micro)
+	} else {
+		u = uint64(micro)
 	}
-	whole := micro / Dollar
-	frac := micro % Dollar
+	whole := u / uint64(Dollar)
+	frac := u % uint64(Dollar)
 	s := fmt.Sprintf("%d.%06d", whole, frac)
 	s = strings.TrimRight(s, "0")
 	s = strings.TrimRight(s, ".")
@@ -71,6 +78,17 @@ func FormatUSD(micro int64) string {
 		s = "-" + s
 	}
 	return s
+}
+
+// Add is saturating int64 addition so spend math cannot wrap.
+func Add(a, b int64) int64 {
+	if b > 0 && a > math.MaxInt64-b {
+		return math.MaxInt64
+	}
+	if b < 0 && a < math.MinInt64-b {
+		return math.MinInt64
+	}
+	return a + b
 }
 
 func digits(s string) bool {

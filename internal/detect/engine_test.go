@@ -118,6 +118,40 @@ func attackEvents(t *testing.T, clk *clock.Fake) []fixRow {
 	return rows
 }
 
+func TestExpiredKeyDoesNotFeedBehaviorRules(t *testing.T) {
+	clk := clock.NewFake(time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC))
+	eng := New(clk, DefaultConfig())
+	eng.LoadBaseline(model.Baseline{
+		KeyID: "k", FirstSeen: clk.Now().Add(-8 * 24 * time.Hour), RequestCount: 500,
+		Countries: map[string]time.Time{"US": clk.Now().Add(-8 * 24 * time.Hour)},
+	})
+	for i := 0; i < 102; i++ {
+		out := eng.Observe(model.Event{
+			Time: clk.Now(), KeyID: "k", Kind: model.KindStandard, IP: "203.0.113.8",
+			Country: "DE", Status: 401, BlockedCode: "key_expired", Mode: model.ModeAutoDisable,
+		})
+		for _, a := range out.Alerts {
+			if a.Rule == RuleRate || a.Rule == RuleCountry {
+				t.Fatalf("expired key fired %s", a.Rule)
+			}
+		}
+		if out.DisableKey {
+			t.Fatal("expired key auto-disabled")
+		}
+	}
+}
+
+func TestCommandsUsesIPv6HostPrefix(t *testing.T) {
+	cmds := Commands("abc12345", "2001:db8::1", "US")
+	joined := stringsJoin(cmds)
+	if !stringsContains(joined, "2001:db8::1/128") {
+		t.Fatalf("%v", cmds)
+	}
+	if stringsContains(joined, "2001:db8::1/32") {
+		t.Fatalf("IPv6 /32: %v", cmds)
+	}
+}
+
 func TestCanaryFiresDuringLearning(t *testing.T) {
 	clk := clock.NewFake(time.Date(2026, 10, 2, 0, 0, 0, 0, time.UTC))
 	eng := New(clk, DefaultConfig())
