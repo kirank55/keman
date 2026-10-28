@@ -1,0 +1,8 @@
+/bin/
+/keman
+*.db
+*.db-wal
+*.db-shm
+/dist/
+/coverage.out
+.quickstart/

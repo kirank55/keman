@@ -1,0 +1,32 @@
+{
+  "version": "2026-10-27",
+  "models": {
+    "gpt-4o": {"input": 2500000, "output": 10000000, "cached_input": 1250000},
+    "gpt-4o-mini": {"input": 150000, "output": 600000, "cached_input": 75000},
+    "gpt-4.1": {"input": 2000000, "output": 8000000, "cached_input": 500000},
+    "gpt-4.1-mini": {"input": 400000, "output": 1600000, "cached_input": 100000},
+    "gpt-4.1-nano": {"input": 100000, "output": 400000, "cached_input": 25000},
+    "gpt-4-turbo-2024-04-09": {"input": 10000000, "output": 30000000},
+    "gpt-3.5-turbo": {"input": 500000, "output": 1500000},
+    "gpt-5": {"input": 1250000, "output": 10000000, "cached_input": 125000},
+    "gpt-5-mini": {"input": 250000, "output": 2000000, "cached_input": 25000},
+    "gpt-5.4": {"input": 2500000, "output": 15000000, "cached_input": 250000},
+    "o3": {"input": 2000000, "output": 8000000, "cached_input": 500000},
+    "o4-mini": {"input": 1100000, "output": 4400000, "cached_input": 275000},
+    "claude-opus-4-5": {"input": 5000000, "output": 25000000, "cached_input": 500000, "cache_write": 6250000},
+    "claude-opus-4-6": {"input": 5000000, "output": 25000000, "cached_input": 500000, "cache_write": 6250000},
+    "claude-opus-4-7": {"input": 5000000, "output": 25000000, "cached_input": 500000, "cache_write": 6250000},
+    "claude-opus-4-8": {"input": 5000000, "output": 25000000, "cached_input": 500000, "cache_write": 6250000},
+    "claude-opus-5": {"input": 5000000, "output": 25000000, "cached_input": 500000, "cache_write": 6250000},
+    "claude-opus-5-5": {"input": 4000000, "output": 20000000, "cached_input": 200000, "cache_write": 5000000},
+    "claude-sonnet-4-5": {"input": 3000000, "output": 15000000, "cached_input": 300000, "cache_write": 3750000},
+    "claude-sonnet-4-6": {"input": 3000000, "output": 15000000, "cached_input": 300000, "cache_write": 3750000},
+    "claude-sonnet-5": {"input": 2000000, "output": 10000000, "cached_input": 200000, "cache_write": 2500000},
+    "claude-sonnet-5-5": {"input": 2000000, "output": 10000000, "cached_input": 100000, "cache_write": 2500000},
+    "claude-haiku-4-5": {"input": 1000000, "output": 5000000, "cached_input": 100000, "cache_write": 1250000},
+    "claude-haiku-5-5": {"input": 100000, "output": 500000, "cached_input": 10000, "cache_write": 125000},
+    "claude-3-5-haiku-latest": {"input": 800000, "output": 4000000, "cached_input": 80000, "cache_write": 1000000},
+    "claude-fable-5": {"input": 10000000, "output": 50000000, "cached_input": 1000000, "cache_write": 12500000},
+    "claude-fable-5-1": {"input": 10000000, "output": 50000000, "cached_input": 250000, "cache_write": 12500000}
+  }
+}
