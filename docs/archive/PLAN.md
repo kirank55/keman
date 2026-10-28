@@ -1,3 +1,5 @@
+> **Archived.** This is the research and 12-week plan from before the beta. It is not the spec: [`beta.md`](../../beta.md) is. Kept for background only.
+
 # Open-source API key proxy: research and 12-week plan
 
 > A security-first, self-hostable proxy that holds real third-party API keys, issues virtual keys, watches for suspicious use and can revoke. The category has real competitors, so this page names the narrow wedge, the architecture, the risks and a plan to find out in 12 weeks whether to build a hosted product.

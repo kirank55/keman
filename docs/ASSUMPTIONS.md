@@ -1,6 +1,6 @@
 # Assumptions
 
-`beta.md` is the source of truth. These are the points it leaves open. Each one was resolved from its decisions rather than left for later. `PLAN.md` is background only.
+`beta.md` is the source of truth. These are the points it leaves open. Each one was resolved from its decisions rather than left for later. [`archive/PLAN.md`](archive/PLAN.md) is background only.
 
 1. **One data key per install.** The beta is a single instance with no tenants. The master key wraps that one data key. `rekey` re-wraps it and does not re-encrypt credentials.
 

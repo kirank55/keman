@@ -14,8 +14,8 @@ Open a private security advisory on the GitHub repository, or contact the mainta
 
 ## What you must protect
 
-- The master key. `init` stores it in `master.key` (mode 0600) next to the config and sets `master_key_file`, unless that field is already set. Anyone with the master key and the database can unwrap credential secrets.
-- The admin token. It is shown once by `init` and by `admin-token rotate`. The admin listener must stay on localhost or a Unix socket.
+- The master key. `init` stores it in `master.key` (mode 0600) next to the config and sets `master_key_file`, unless that field is already set. Anyone with the master key and the database can unwrap credential secrets. By default both files are in the same directory, so a copy of that directory (a backup, a shared volume) carries everything needed. For production, set `master_key_file` to a path outside the data directory or a secrets mount, or supply `KEMAN_MASTER_KEY` from a secrets manager, and keep the directory mode 0700.
+- The admin token. It is shown once by `init` and by `admin-token rotate`. The admin listener must stay on localhost or a Unix socket. The terminal UI keeps a typed token only in its own memory and never writes it to disk. `KEMAN_ADMIN_TOKEN` is readable by the same user through the process environment. `scripts/quickstart.sh` saves a token to `.quickstart/admin.token` for the demo only.
 - The SQLite file. It holds ciphertext, spend counters, events, and the wrapped data key.
 - The process memory. Plaintext credentials are cached so the proxy can swap them onto requests. A memory dump defeats the encryption. Run the process as a non-root user, on a read-only root filesystem where you can, and with egress only to the upstream hosts you configured.
 
