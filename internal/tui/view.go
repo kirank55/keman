@@ -484,12 +484,20 @@ func (m model) renderDetail() string {
 	if !ok {
 		return "That key is no longer listed.\n"
 	}
-	var b strings.Builder
-	b.WriteString(titleStyle.Render(displayName(k)))
-	b.WriteString("  " + dimStyle.Render(k.ID) + "  " + statusStyle(k).Render(statusLabel(k)) + "  " + kindStyle(k).Render(kindLabel(k)))
-	b.WriteString("\n")
-	b.WriteString(kv("today", todayLine(k)))
-	b.WriteString(kv("this month", usd(k.SpendMonth)))
+	w := m.totalWidth()
+	wide := w >= 100
+	u := m.detailUsage
+
+	head := titleStyle.Render(displayName(k)) + "  " + dimStyle.Render(k.ID) + "  " +
+		statusStyle(k).Render(statusLabel(k)) + "  " + kindStyle(k).Render(kindLabel(k))
+	panels := []string{panel("virtual key", head+"\n", w)}
+
+	var spend strings.Builder
+	spend.WriteString(kv("today", todayLine(k)))
+	spend.WriteString(kv("this month", usd(k.SpendMonth)))
+	if k.ExpiresAt != nil {
+		spend.WriteString(kv("expires", fmtTime(*k.ExpiresAt)))
+	}
 	if k.Policy != nil {
 		mode := k.Policy.Mode
 		if mode == "" {
@@ -499,47 +507,148 @@ func (m model) renderDetail() string {
 		if k.Policy.RPM != nil {
 			rpm = strconv.Itoa(*k.Policy.RPM) + " per minute"
 		}
-		b.WriteString(kv("mode", mode))
-		b.WriteString(kv("rate", rpm))
-		b.WriteString(kv("daily cap", capLine(k.Policy.DailyCapMicro)))
-		b.WriteString(kv("monthly cap", capLine(k.Policy.MonthlyCapMicro)))
+		spend.WriteString(kv("mode", mode))
+		spend.WriteString(kv("rate limit", rpm))
+		spend.WriteString(kv("daily cap", capLine(k.Policy.DailyCapMicro)))
+		spend.WriteString(kv("monthly cap", capLine(k.Policy.MonthlyCapMicro)))
 		if len(k.Policy.Models) > 0 {
-			b.WriteString(kv("models", strings.Join(k.Policy.Models, ", ")))
+			spend.WriteString(kv("models", strings.Join(k.Policy.Models, ", ")))
 		}
 		if len(k.Policy.Paths) > 0 {
-			b.WriteString(kv("paths", strings.Join(k.Policy.Paths, ", ")))
+			spend.WriteString(kv("paths", strings.Join(k.Policy.Paths, ", ")))
 		}
 	}
-	if k.ExpiresAt != nil {
-		b.WriteString(kv("expires", fmtTime(*k.ExpiresAt)))
+
+	var usage string
+	switch {
+	case !m.detailLoaded:
+		usage = "loading…\n"
+	case u.Requests == 0:
+		usage = dimStyle.Render("no requests yet") + "\n"
+	default:
+		usage = usageSummary(u)
 	}
-	b.WriteString("\n")
-	b.WriteString(titleStyle.Render("usage"))
-	b.WriteString("\n")
-	if !m.detailLoaded {
-		b.WriteString("loading…\n")
+
+	var clients, models strings.Builder
+	switch {
+	case !m.detailLoaded || u.Requests == 0:
+		clients.WriteString(dimStyle.Render("none") + "\n")
+		models.WriteString(dimStyle.Render("none") + "\n")
+	default:
+		if len(u.Clients) == 0 {
+			clients.WriteString(dimStyle.Render("none") + "\n")
+		}
+		for _, c := range u.Clients {
+			fmt.Fprintf(&clients, "%s  %d requests  last %s\n", clientWhere(c), c.Requests, fmtTime(c.LastSeen))
+		}
+		if len(u.Models) == 0 {
+			models.WriteString(dimStyle.Render("none") + "\n")
+		}
+		for _, item := range u.Models {
+			name := item.Model
+			if name == "" {
+				name = "—"
+			}
+			cost := "—"
+			if item.Priced > 0 {
+				cost = usd(item.CostMicro)
+			}
+			fmt.Fprintf(&models, "%s  %d requests  in %d · out %d  %s\n", name, item.Requests, item.TokensIn, item.TokensOut, cost)
+		}
+	}
+
+	if wide {
+		panels = append(panels,
+			pair("spend and limits", spend.String(), "usage", usage, w),
+			pair("clients · who called", clients.String(), "models · what was called", models.String(), w))
 	} else {
-		b.WriteString(renderUsage(m.detailUsage))
+		panels = append(panels,
+			panel("spend and limits", spend.String(), w),
+			panel("usage", usage, w),
+			panel("clients · who called", clients.String(), w),
+			panel("models · what was called", models.String(), w))
 	}
-	b.WriteString("\n")
-	b.WriteString(titleStyle.Render("detections"))
-	b.WriteString("\n")
+
+	var recent strings.Builder
+	if !m.detailLoaded || len(u.Recent) == 0 {
+		recent.WriteString(dimStyle.Render("none") + "\n")
+	}
+	for _, r := range u.Recent {
+		modelName := r.Model
+		if modelName == "" {
+			modelName = "—"
+		}
+		status := strconv.Itoa(r.Status)
+		st := okStyle
+		if r.Status >= 400 {
+			st = badStyle
+		}
+		line := fmtTime(r.Time) + "  " + st.Render(status) + "  " + fmt.Sprintf("%dms", r.LatencyMS) + "  " + r.IP + "  " + modelName
+		if r.BlockedCode != "" {
+			line += "  " + badStyle.Render(r.BlockedCode)
+		}
+		recent.WriteString(line + "\n")
+		cost := "—"
+		if r.CostMicro != nil {
+			cost = usd(*r.CostMicro)
+			if r.CostEstimated {
+				cost += " estimated"
+			}
+		}
+		fmt.Fprintf(&recent, "  %s  in %d · out %d  %s\n", dimStyle.Render(r.Operation), r.TokensIn, r.TokensOut, cost)
+	}
+	panels = append(panels, panel("recent requests · newest first", recent.String(), w))
+
+	var dets strings.Builder
 	if len(m.detailDets) == 0 {
-		b.WriteString("none\n")
+		dets.WriteString(okStyle.Render("none") + dimStyle.Render(" · no rule has fired on this key") + "\n")
 	}
 	for _, d := range m.detailDets {
-		b.WriteString(fmtTime(d.Time) + "  " + severityStyle(d.Severity).Render(fit(d.Severity, 8)) + "  " + d.Rule + "\n")
+		dets.WriteString(fmtTime(d.Time) + "  " + severityStyle(d.Severity).Render(fit(d.Severity, 8)) + "  " + d.Rule + "\n")
 	}
+	panels = append(panels, panel("detections · rules that fired", dets.String(), w))
+	return strings.Join(panels, "\n") + "\n"
+}
+
+// panel draws a rounded box with its title in the top border. Lines wider
+// than the box are cut; the result is exactly width cells wide.
+func panel(title, content string, width int) string {
+	if width < 8 {
+		return content
+	}
+	inner := width - 4
+	cut := lipgloss.NewStyle().MaxWidth(inner)
+	bd := dimStyle
+	label := " " + title + " "
+	if lipgloss.Width(label) > width-5 {
+		label = fit(label, width-5)
+	}
+	var b strings.Builder
+	b.WriteString(bd.Render("╭─") + markStyle.Render(label) + bd.Render(strings.Repeat("─", width-3-lipgloss.Width(label))+"╮"))
+	for _, l := range strings.Split(strings.TrimSuffix(content, "\n"), "\n") {
+		if lipgloss.Width(l) > inner {
+			l = cut.Render(l)
+		}
+		b.WriteString("\n" + bd.Render("│") + " " + l + strings.Repeat(" ", inner-lipgloss.Width(l)) + " " + bd.Render("│"))
+	}
+	b.WriteString("\n" + bd.Render("╰"+strings.Repeat("─", width-2)+"╯"))
 	return b.String()
 }
 
-func renderUsage(u KeyUsage) string {
-	var b strings.Builder
-	if u.Requests == 0 {
-		b.WriteString("no requests yet\n")
-		return b.String()
+// pair draws two panels side by side with equal heights.
+func pair(lt, lc, rt, rc string, width int) string {
+	lw := width / 2
+	n := max(lineCount(strings.TrimSuffix(lc, "\n")), lineCount(strings.TrimSuffix(rc, "\n")))
+	pad := func(c string) string {
+		c = strings.TrimSuffix(c, "\n")
+		return c + strings.Repeat("\n", n-lineCount(c)+1)
 	}
-	b.WriteString(kv("requests", strconv.Itoa(u.Requests)))
+	return lipgloss.JoinHorizontal(lipgloss.Top, panel(lt, pad(lc), lw), panel(rt, pad(rc), width-lw))
+}
+
+func usageSummary(u KeyUsage) string {
+	var b strings.Builder
+	b.WriteString(kv("requests", strconv.Itoa(u.Requests)+" total"))
 	if !u.LastSeen.IsZero() {
 		b.WriteString(kv("last seen", fmtTime(u.LastSeen)))
 	}
@@ -559,53 +668,6 @@ func renderUsage(u KeyUsage) string {
 		}
 	}
 	b.WriteString(kv("cost", cost))
-
-	b.WriteString("\n" + dimStyle.Render("clients") + "\n")
-	if len(u.Clients) == 0 {
-		b.WriteString("none\n")
-	}
-	for _, c := range u.Clients {
-		fmt.Fprintf(&b, "%s  %d requests  last %s\n", clientWhere(c), c.Requests, fmtTime(c.LastSeen))
-	}
-	b.WriteString("\n" + dimStyle.Render("models") + "\n")
-	if len(u.Models) == 0 {
-		b.WriteString("none\n")
-	}
-	for _, item := range u.Models {
-		name := item.Model
-		if name == "" {
-			name = "—"
-		}
-		cost := "—"
-		if item.Priced > 0 {
-			cost = usd(item.CostMicro)
-		}
-		fmt.Fprintf(&b, "%s  %d requests  in %d · out %d  %s\n", name, item.Requests, item.TokensIn, item.TokensOut, cost)
-	}
-	b.WriteString("\n" + dimStyle.Render("recent requests") + "\n")
-	if len(u.Recent) == 0 {
-		b.WriteString("none\n")
-	}
-	for _, r := range u.Recent {
-		modelName := r.Model
-		if modelName == "" {
-			modelName = "—"
-		}
-		line := fmt.Sprintf("%s  %d  %dms  %s  %s", fmtTime(r.Time), r.Status, r.LatencyMS, r.IP, modelName)
-		if r.BlockedCode != "" {
-			line += "  " + r.BlockedCode
-		}
-		b.WriteString(line)
-		b.WriteString("\n")
-		cost := "—"
-		if r.CostMicro != nil {
-			cost = usd(*r.CostMicro)
-			if r.CostEstimated {
-				cost += " estimated"
-			}
-		}
-		fmt.Fprintf(&b, "  %s  in %d · out %d  %s\n", r.Operation, r.TokensIn, r.TokensOut, cost)
-	}
 	return b.String()
 }
 
