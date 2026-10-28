@@ -33,6 +33,8 @@ The beta supports HTTP only. Other protocols, such as Redis and MongoDB, may com
 - Inline limits: per-key rate limit, daily and monthly spend caps, path and model allowlists, CIDR and country allowlists.
 - Behavior alerts: rate spike, spend spike, new country, new ASN, repeated allowlist violations, upstream auth-error burst, use of a disabled or revoked key, canary use.
 - Opt-in auto-disable, with a dry-run mode.
+- Leak containment: new standard keys expire after `default_key_ttl` (90 days by default); `keman key rotate` issues a replacement with the same policy and retires the old key after a grace period, or at once; `keman exposure` lists keys open to any address, unexpiring, or idle; `keman canary create` prints a decoy as ready-to-plant settings.
+- `keman scan`: finds provider keys and virtual keys in files and git history, offline. It needs no server.
 - Alerts to Slack and signed webhooks.
 - CLI, terminal UI (the default when you run `keman`), admin API and Prometheus metrics. `keman` starts the local server when none is listening and stops that server on exit.
 - Audit log.
@@ -69,7 +71,7 @@ The beta supports HTTP only. Other protocols, such as Redis and MongoDB, may com
 | --- | --- |
 | `upstream` | Target service: protocol (`http` only in beta), profile (`openai`, `anthropic`, `generic`), host, port, TLS settings. |
 | `credential` | The real secret for an upstream, encrypted, with a `key_version`. Auth style: header template or HTTP Basic. Write-only. |
-| `virtual_key` | What apps use. Id plus a hashed secret. Kind: `standard` or `canary`. Status: `active`, `disabled` or `revoked`. Optional expiry. |
+| `virtual_key` | What apps use. Id plus a hashed secret. Kind: `standard` or `canary`. Status: `active`, `disabled` or `revoked`. Expiry, defaulting to `default_key_ttl` for standard keys. |
 | `policy` | Limits and allowlists for a virtual key. Mode: `alert_only` (default), `dry_run` or `auto_disable`. |
 | `spend_counter` | Committed spend per key, per day and per month. Kept apart from events so dropped events never lose spend. |
 | `event` | Metadata for one request: time, key, IP, country, ASN, operation, status, latency, sizes, tokens, cost, and whether the cost is estimated. |

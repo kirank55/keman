@@ -25,6 +25,7 @@ import (
 	"github.com/kirank55/keman/internal/app"
 	"github.com/kirank55/keman/internal/config"
 	"github.com/kirank55/keman/internal/cryptoenc"
+	"github.com/kirank55/keman/internal/expiry"
 	"github.com/kirank55/keman/internal/money"
 	"github.com/kirank55/keman/internal/tui"
 )
@@ -81,6 +82,12 @@ func Run(ctx context.Context, args []string, getenv func(string) string, stdin i
 		return c.policy(rest[1:])
 	case "alert":
 		return c.alert(rest[1:])
+	case "canary":
+		return c.canary(rest[1:])
+	case "exposure":
+		return c.exposure(rest[1:])
+	case "scan":
+		return c.scan(rest[1:])
 	case "detection":
 		return c.detection(rest[1:])
 	case "audit":
@@ -654,7 +661,7 @@ func (c *cmd) credential(args []string) int {
 
 func (c *cmd) key(args []string) int {
 	if len(args) == 0 {
-		fmt.Fprintln(c.stderr, "usage: keman key create|list|disable|enable|revoke")
+		fmt.Fprintln(c.stderr, "usage: keman key create|list|rotate|expiry|disable|enable|revoke")
 		return 2
 	}
 	api, err := c.api()
@@ -674,13 +681,20 @@ func (c *cmd) key(args []string) int {
 		f := newFlags(args[1:])
 		cred := f.str("credential")
 		body := map[string]any{"name": f.str("name"), "kind": f.str("kind")}
+		if f.bool("no-expiry") {
+			body["no_expiry"] = true
+		}
 		if exp := f.str("expires"); exp != "" {
-			t, err := time.Parse(time.RFC3339, exp)
+			at, err := expiry.Parse(exp, time.Now())
 			if err != nil {
-				fmt.Fprintln(c.stderr, "--expires must be RFC3339, for example 2026-12-31T23:59:59Z")
+				fmt.Fprintln(c.stderr, "--expires: "+err.Error())
 				return 2
 			}
-			body["expires_at"] = t.UTC().Format(time.RFC3339)
+			if at == nil {
+				body["no_expiry"] = true
+			} else {
+				body["expires_at"] = at.Format(time.RFC3339)
+			}
 		}
 		if err := f.done(); err != nil {
 			fmt.Fprintln(c.stderr, err.Error())
@@ -702,7 +716,14 @@ func (c *cmd) key(args []string) int {
 			return 1
 		}
 		fmt.Fprintln(c.stderr, "store the virtual key (token) now; it is not shown again")
+		if out["expires_at"] == nil && out["kind"] != "canary" {
+			fmt.Fprintln(c.stderr, "warning: this key never expires; a copy that leaks keeps working until you revoke it")
+		}
 		return c.printJSON(out)
+	case "rotate":
+		return c.keyRotate(api, args[1:])
+	case "expiry":
+		return c.keyExpiry(api, args[1:])
 	case "disable", "enable", "revoke":
 		if len(args) < 2 {
 			fmt.Fprintf(c.stderr, "usage: keman key %s <id-or-name>\n", args[0])
@@ -720,7 +741,7 @@ func (c *cmd) key(args []string) int {
 		}
 		return c.printJSON(out)
 	default:
-		fmt.Fprintln(c.stderr, "usage: keman key create|list|disable|enable|revoke")
+		fmt.Fprintln(c.stderr, "usage: keman key create|list|rotate|expiry|disable|enable|revoke")
 		return 2
 	}
 }
@@ -1102,6 +1123,7 @@ func newFlags(args []string) *flagSet {
 	f := &flagSet{seen: map[string][]string{}, bools: map[string]bool{}}
 	boolNames := map[string]bool{
 		"tls": true, "insecure": true, "no-inject-usage": true, "userpass": true, "yes": true,
+		"no-expiry": true, "strict": true, "history": true, "json": true,
 	}
 	for i := 0; i < len(args); i++ {
 		a := args[i]
@@ -1190,32 +1212,49 @@ func formatAPIError(status int, raw []byte) error {
 }
 
 func usage(w io.Writer) {
-	fmt.Fprint(w, `keman `+Version+` — self-hosted API-key proxy
+	fmt.Fprint(w, `keman `+Version+` — self-hosted proxy that keeps real API keys out of your apps
+
+Apps get virtual keys instead. A virtual key can be locked to your network, expires, raises alerts
+when it is misused, and is revoked without touching the real key.
 
 With no command, keman opens the full-screen UI. It needs a terminal and an initialized database. It starts the local server when nothing is listening, and stops that server on exit. init writes master.key and records master_key_file. Type the admin token at startup, or set KEMAN_ADMIN_TOKEN.
 
+Find and contain leaks
+  keman scan [path ...] [--history] [--json]   real API keys in files and git history (exit 3 if any)
+  keman exposure [--strict]                    keys that are easy to abuse if leaked (--strict: exit 3)
+  keman canary create --credential primary --name decoy --base-url https://keman.example.com
+  keman key rotate <id-or-name> [--grace 24h]  new key now; the old one stops after the grace (0 revokes)
+  keman key revoke <id-or-name>
+  keman detection list [--key id]
+
+Set up
   keman init
   keman serve
-  keman admin-token rotate
-  keman rekey --old-master-key-file old --new-master-key-file new
   keman upstream add --name openai --profile openai --host api.openai.com --port 443 --tls
   keman upstream add --name stripe --profile generic --host api.stripe.com --port 443 --tls --path "POST /v1/charges"
   keman upstream list
   keman credential add --upstream openai --name primary --header "Authorization: Bearer {key}" --secret-file ./secret
   keman credential list
   keman credential rotate <id-or-name> --secret-env OPENAI_API_KEY
-  keman key create --credential primary --name laptop
-  keman key create --credential primary --name decoy --kind canary
-  keman key create --credential primary --name intern --expires 2026-12-31T23:59:59Z
-  keman key list
-  keman key disable|enable|revoke <id-or-name>
-  keman policy set <id-or-name> --daily-usd 1.50 --rpm 60 --mode alert_only
-  keman policy set <id-or-name> --mode auto_disable --yes
-  keman policy dry-run <id-or-name>
   keman alert add --kind webhook --url https://example --secret-file ./hook
   keman alert list
-  keman detection list [--key id]
+
+Virtual keys
+  keman key create --credential primary --name laptop             expires after default_key_ttl (90 days)
+  keman key create --credential primary --name ci --expires 30d   or 2026-12-31, RFC3339, or never
+  keman key create --credential primary --name decoy --kind canary
+  keman key expiry <id-or-name> <30d|2026-12-31|RFC3339|never>
+  keman key list
+  keman key disable|enable <id-or-name>
+  keman policy set <id-or-name> --cidr 203.0.113.0/24 --country US --rpm 60
+  keman policy set <id-or-name> --daily-usd 1.50 --monthly-usd 20    LLM upstreams only
+  keman policy set <id-or-name> --mode auto_disable --yes
+  keman policy dry-run <id-or-name>
   keman audit list
+
+Admin
+  keman admin-token rotate
+  keman rekey --old-master-key-file old --new-master-key-file new
   keman version
 
 Global flags (before or after the command): --config PATH --admin-url URL --admin-token TOKEN

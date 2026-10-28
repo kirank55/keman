@@ -36,6 +36,7 @@ type Config struct {
 	UpstreamDialTimeout   time.Duration `yaml:"upstream_dial_timeout"`
 	UpstreamHeaderTimeout time.Duration `yaml:"upstream_response_header_timeout"`
 	InvalidKeyRPM         int           `yaml:"invalid_key_rpm"`
+	DefaultKeyTTL         time.Duration `yaml:"default_key_ttl"`
 	MasterKeyFile         string        `yaml:"master_key_file"`
 }
 
@@ -56,6 +57,7 @@ func Defaults() Config {
 		UpstreamDialTimeout:   10 * time.Second,
 		UpstreamHeaderTimeout: 60 * time.Second,
 		InvalidKeyRPM:         60,
+		DefaultKeyTTL:         90 * 24 * time.Hour,
 	}
 }
 
@@ -170,6 +172,12 @@ func (c *Config) UnmarshalYAML(node *yaml.Node) error {
 	}
 	if c.UpstreamHeaderTimeout, err = pickDuration(raw, "upstream_response_header_timeout", c.UpstreamHeaderTimeout); err != nil {
 		return err
+	}
+	if c.DefaultKeyTTL, err = pickDuration(raw, "default_key_ttl", c.DefaultKeyTTL); err != nil {
+		return err
+	}
+	if c.DefaultKeyTTL < 0 {
+		return fmt.Errorf("config default_key_ttl must be zero or positive")
 	}
 	if c.DefaultReservation, err = pickInt64(raw, "default_reservation_microusd", c.DefaultReservation); err != nil {
 		return err
@@ -405,6 +413,7 @@ func Encode(cfg Config) ([]byte, error) {
 	fmt.Fprintf(&b, "upstream_dial_timeout: %s\n", formatDuration(cfg.UpstreamDialTimeout))
 	fmt.Fprintf(&b, "upstream_response_header_timeout: %s\n", formatDuration(cfg.UpstreamHeaderTimeout))
 	fmt.Fprintf(&b, "invalid_key_rpm: %d\n", cfg.InvalidKeyRPM)
+	fmt.Fprintf(&b, "default_key_ttl: %s\n", formatDuration(cfg.DefaultKeyTTL))
 	return []byte(b.String()), nil
 }
 

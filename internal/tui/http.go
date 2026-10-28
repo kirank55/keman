@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/kirank55/keman/internal/adminclient"
 )
@@ -230,6 +231,37 @@ func (h *HTTP) CreateKey(ctx context.Context, credentialID, name, kind string) (
 		return CreatedKey{}, explain(err, h.c.Base)
 	}
 	return CreatedKey{ID: out.ID, Name: out.Name, Token: out.Token, Kind: out.Kind, Status: out.Status}, nil
+}
+
+func (h *HTTP) SetExpiry(ctx context.Context, id string, at *time.Time) error {
+	body := map[string]any{"expires_at": at}
+	if err := h.c.Call(ctx, http.MethodPut, "/v1/keys/"+url.PathEscape(id)+"/expiry", body, nil); err != nil {
+		return explain(err, h.c.Base)
+	}
+	return nil
+}
+
+func (h *HTTP) RotateKey(ctx context.Context, id string, grace time.Duration) (Rotation, error) {
+	var out struct {
+		ID       string `json:"id"`
+		Token    string `json:"token"`
+		Kind     string `json:"kind"`
+		Status   string `json:"status"`
+		Name     string `json:"name"`
+		Replaced struct {
+			Name      string     `json:"name"`
+			Status    string     `json:"status"`
+			ExpiresAt *time.Time `json:"expires_at"`
+		} `json:"replaced"`
+	}
+	body := map[string]any{"grace_seconds": int64(grace / time.Second)}
+	if err := h.c.Call(ctx, http.MethodPost, "/v1/keys/"+url.PathEscape(id)+"/rotate", body, &out); err != nil {
+		return Rotation{}, explain(err, h.c.Base)
+	}
+	return Rotation{
+		Key:     CreatedKey{ID: out.ID, Name: out.Name, Token: out.Token, Kind: out.Kind, Status: out.Status},
+		OldName: out.Replaced.Name, OldUntil: out.Replaced.ExpiresAt, OldRevoked: out.Replaced.Status == "revoked",
+	}, nil
 }
 
 // adminGate is implemented by the real admin client. A missing token asks

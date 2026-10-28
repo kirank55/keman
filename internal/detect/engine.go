@@ -364,11 +364,12 @@ func (e *Engine) add(out *Outcome, st *keyState, ev model.Event, rule, sev strin
 	for k, v := range evidence {
 		observed[k] = v
 	}
+	actions := Actions(ev.KeyID, ev.IP, ev.Country, ev.Kind, rule)
 	out.Alerts = append(out.Alerts, model.Alert{
-		Rule: rule, Severity: sev, KeyID: ev.KeyID,
+		Rule: rule, Severity: sev, KeyID: ev.KeyID, Kind: ev.Kind,
 		Evidence: evidence, Baseline: base, Observed: observed,
-		Commands: Commands(ev.KeyID, ev.IP, ev.Country),
-		FiredAt:  ev.Time,
+		Actions: actions, Commands: Commands(actions),
+		FiredAt: ev.Time,
 	})
 }
 
@@ -529,16 +530,40 @@ func isAllowlist(code string) bool {
 	}
 }
 
-// Commands are the lines an alert shows an operator.
-func Commands(keyID, ip, country string) []string {
-	cmds := []string{"keman key disable " + keyID}
+// Actions are the responses an alert offers, most decisive first. The
+// default assumption is a leak: replacing the key comes before allowing the
+// address that used it.
+func Actions(keyID, ip, country, kind, rule string) []model.AlertAction {
+	if kind == model.KindCanary {
+		return []model.AlertAction{
+			{When: "A decoy was used. Whoever has it also saw what was stored next to it. Rotate those real secrets."},
+			{When: "See every use of the decoy, with addresses", Command: "keman detection list --key " + keyID},
+		}
+	}
+	acts := []model.AlertAction{
+		{When: "Not you: issue a replacement and revoke the leaked key now", Command: "keman key rotate " + keyID + " --grace 0"},
+		{When: "Not sure: turn it off until you know (reversible)", Command: "keman key disable " + keyID},
+	}
+	if rule == RuleDisabled {
+		return acts
+	}
 	if ip != "" {
-		cmds = append(cmds, "keman policy set "+keyID+" --cidr "+hostCIDR(ip))
+		acts = append(acts, model.AlertAction{When: "It was you: allow this address and nothing else", Command: "keman policy set " + keyID + " --cidr " + hostCIDR(ip)})
 	}
 	if country != "" {
-		cmds = append(cmds, "keman policy set "+keyID+" --country "+country)
+		acts = append(acts, model.AlertAction{When: "It was you: allow this country and nothing else", Command: "keman policy set " + keyID + " --country " + country})
 	}
-	cmds = append(cmds, "keman policy set "+keyID+" --daily-usd 1")
+	return acts
+}
+
+// Commands are the runnable lines of actions, in order.
+func Commands(actions []model.AlertAction) []string {
+	var cmds []string
+	for _, a := range actions {
+		if a.Command != "" {
+			cmds = append(cmds, a.Command)
+		}
+	}
 	return cmds
 }
 

@@ -17,6 +17,7 @@ import (
 	"github.com/kirank55/keman/internal/clock"
 	"github.com/kirank55/keman/internal/cryptoenc"
 	"github.com/kirank55/keman/internal/detect"
+	"github.com/kirank55/keman/internal/exposure"
 	"github.com/kirank55/keman/internal/headers"
 	"github.com/kirank55/keman/internal/keyfmt"
 	"github.com/kirank55/keman/internal/model"
@@ -51,6 +52,9 @@ type Service struct {
 	Clock      clock.Clock
 	Rules      detect.Config
 	GeoCountry bool
+	// DefaultTTL is the expiry given to a new standard key that names none.
+	// Zero means new keys never expire unless asked.
+	DefaultTTL time.Duration
 	OnStatus   func(id, status string, paused time.Time)
 	OnSecret   func(string)
 	Log        *slog.Logger
@@ -198,7 +202,10 @@ func (s *Service) RotateCredential(ctx context.Context, id, secret, actor, ip st
 	return cur, nil
 }
 
-func (s *Service) CreateKey(ctx context.Context, credentialID, name, kind string, expires *time.Time, actor, ip string) (token string, key model.VirtualKey, err error) {
+// CreateKey issues a virtual key. A standard key with no expiry gets
+// DefaultTTL unless noExpiry is set. Canary keys never expire by default:
+// a decoy is meant to sit where it was planted.
+func (s *Service) CreateKey(ctx context.Context, credentialID, name, kind string, expires *time.Time, noExpiry bool, actor, ip string) (token string, key model.VirtualKey, err error) {
 	if _, ok := s.State.Credential(credentialID); !ok {
 		return "", model.VirtualKey{}, &OpError{Status: 404, Code: "not_found", Message: "Credential not found."}
 	}
@@ -207,6 +214,16 @@ func (s *Service) CreateKey(ctx context.Context, credentialID, name, kind string
 	}
 	if kind != model.KindStandard && kind != model.KindCanary {
 		return "", model.VirtualKey{}, &OpError{Status: 400, Code: "invalid", Message: "Kind must be standard or canary."}
+	}
+	if expires != nil && noExpiry {
+		return "", model.VirtualKey{}, &OpError{Status: 400, Code: "invalid", Message: "Set an expiry or no_expiry, not both."}
+	}
+	if expires != nil && !expires.After(s.now()) {
+		return "", model.VirtualKey{}, &OpError{Status: 400, Code: "invalid", Message: "The expiry must be in the future."}
+	}
+	if expires == nil && !noExpiry && kind == model.KindStandard && s.DefaultTTL > 0 {
+		at := s.now().Add(s.DefaultTTL).Truncate(time.Second)
+		expires = &at
 	}
 	id, secret, full, err := keyfmt.Generate()
 	if err != nil {
@@ -267,6 +284,124 @@ func (s *Service) SetStatus(ctx context.Context, id, status, actor, ip string) (
 	s.audit(ctx, actor, "key."+status, id, before, status, ip)
 	full.SecretHash = nil
 	return full, nil
+}
+
+// SetExpiry changes when a key stops working. nil means never.
+func (s *Service) SetExpiry(ctx context.Context, id string, expires *time.Time, actor, ip string) (model.VirtualKey, error) {
+	key, ok := s.State.Key(id)
+	if !ok {
+		return model.VirtualKey{}, &OpError{Status: 404, Code: "not_found", Message: "Virtual key not found."}
+	}
+	if key.Status == model.StatusRevoked {
+		return model.VirtualKey{}, &OpError{Status: 409, Code: "key_revoked", Message: "A revoked virtual key cannot be changed."}
+	}
+	if expires != nil {
+		at := expires.UTC()
+		expires = &at
+	}
+	if err := s.Store.UpdateKeyLifecycle(ctx, id, key.Name, expires); err != nil {
+		return model.VirtualKey{}, conflict(err)
+	}
+	before := expiryText(key.ExpiresAt)
+	key.ExpiresAt = expires
+	s.State.PutKey(key)
+	s.audit(ctx, actor, "key.expiry", id, before, expiryText(expires), ip)
+	key.SecretHash = nil
+	return key, nil
+}
+
+// RotatedSuffix is added to the name of a key that a rotation replaced.
+const RotatedSuffix = " (rotated)"
+
+// Rotated is the result of RotateKey. Token is the new key's secret.
+type Rotated struct {
+	Token string
+	New   model.VirtualKey
+	Old   model.VirtualKey
+}
+
+// RotateKey issues a replacement for id with the same credential, name, kind
+// and policy. The old key keeps working for grace, then expires; a zero grace
+// revokes it now. The old key is renamed "<name> (rotated)" so names stay unique.
+func (s *Service) RotateKey(ctx context.Context, id string, grace time.Duration, actor, ip string) (Rotated, error) {
+	old, ok := s.State.Key(id)
+	if !ok {
+		return Rotated{}, &OpError{Status: 404, Code: "not_found", Message: "Virtual key not found."}
+	}
+	if old.Status == model.StatusRevoked {
+		return Rotated{}, &OpError{Status: 409, Code: "key_revoked", Message: "A revoked virtual key cannot be rotated."}
+	}
+	if grace < 0 {
+		return Rotated{}, &OpError{Status: 400, Code: "invalid", Message: "The grace period cannot be negative."}
+	}
+	now := s.now()
+	var expires *time.Time
+	if old.ExpiresAt != nil || s.DefaultTTL > 0 {
+		ttl := s.DefaultTTL
+		if old.ExpiresAt != nil && old.ExpiresAt.After(old.CreatedAt) {
+			ttl = old.ExpiresAt.Sub(old.CreatedAt)
+		}
+		if ttl > 0 && old.Kind == model.KindStandard {
+			at := now.Add(ttl).Truncate(time.Second)
+			expires = &at
+		}
+	}
+	token, fresh, err := s.CreateKey(ctx, old.CredentialID, old.Name, old.Kind, expires, expires == nil, actor, ip)
+	if err != nil {
+		return Rotated{}, err
+	}
+	if p, ok := s.State.Policy(id); ok {
+		cp := p.Policy
+		cp.KeyID = fresh.ID
+		cp.UpdatedAt = now
+		parsed, err := state.ParsePolicy(cp)
+		if err == nil {
+			err = s.Store.UpsertPolicy(ctx, cp)
+		}
+		if err != nil {
+			return Rotated{}, err
+		}
+		s.State.PutPolicy(parsed)
+	}
+	oldName := old.Name
+	if oldName == "" {
+		oldName = old.ID
+	}
+	oldName += RotatedSuffix
+	if grace == 0 {
+		if err := s.Store.UpdateKeyLifecycle(ctx, id, oldName, old.ExpiresAt); err != nil {
+			return Rotated{}, err
+		}
+		cur, _ := s.State.Key(id)
+		cur.Name = oldName
+		s.State.PutKey(cur)
+		revoked, err := s.SetStatus(ctx, id, model.StatusRevoked, actor, ip)
+		if err != nil {
+			return Rotated{}, err
+		}
+		s.audit(ctx, actor, "key.rotate", id, "", fresh.ID, ip)
+		return Rotated{Token: token, New: fresh, Old: revoked}, nil
+	}
+	until := now.Add(grace).Truncate(time.Second)
+	if old.ExpiresAt != nil && old.ExpiresAt.Before(until) {
+		until = *old.ExpiresAt
+	}
+	if err := s.Store.UpdateKeyLifecycle(ctx, id, oldName, &until); err != nil {
+		return Rotated{}, err
+	}
+	old.Name = oldName
+	old.ExpiresAt = &until
+	s.State.PutKey(old)
+	s.audit(ctx, actor, "key.rotate", id, "", fresh.ID, ip)
+	old.SecretHash = nil
+	return Rotated{Token: token, New: fresh, Old: old}, nil
+}
+
+func expiryText(t *time.Time) string {
+	if t == nil {
+		return "never"
+	}
+	return t.UTC().Format(time.RFC3339)
 }
 
 type PolicyInput struct {
@@ -625,18 +760,19 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Name         string     `json:"name"`
 			Kind         string     `json:"kind"`
 			ExpiresAt    *time.Time `json:"expires_at"`
+			NoExpiry     bool       `json:"no_expiry"`
 		}
 		if !decode(w, r, &req) {
 			return
 		}
-		token, key, err := h.Service.CreateKey(r.Context(), req.CredentialID, req.Name, req.Kind, req.ExpiresAt, actor, ip)
+		token, key, err := h.Service.CreateKey(r.Context(), req.CredentialID, req.Name, req.Kind, req.ExpiresAt, req.NoExpiry, actor, ip)
 		if err != nil {
 			write(w, nil, err)
 			return
 		}
-		write(w, map[string]any{"id": key.ID, "token": token, "kind": key.Kind, "status": key.Status, "name": key.Name, "credential_id": key.CredentialID}, nil)
+		write(w, createdView(token, key), nil)
 	case r.Method == http.MethodGet && r.URL.Path == "/v1/keys":
-		write(w, h.keyViews(), nil)
+		write(w, h.keyViews(r.Context()), nil)
 	case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/v1/keys/"):
 		rest := strings.TrimPrefix(r.URL.Path, "/v1/keys/")
 		id, action, ok := strings.Cut(rest, "/")
@@ -655,6 +791,25 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 			k, err := h.Service.SetStatus(r.Context(), id, status, actor, ip)
 			write(w, k, err)
+		case "rotate":
+			var req struct {
+				GraceSeconds *int64 `json:"grace_seconds"`
+			}
+			if !decode(w, r, &req) {
+				return
+			}
+			grace := 24 * time.Hour
+			if req.GraceSeconds != nil {
+				grace = time.Duration(*req.GraceSeconds) * time.Second
+			}
+			rot, err := h.Service.RotateKey(r.Context(), id, grace, actor, ip)
+			if err != nil {
+				write(w, nil, err)
+				return
+			}
+			out := createdView(rot.Token, rot.New)
+			out["replaced"] = map[string]any{"id": rot.Old.ID, "name": rot.Old.Name, "status": rot.Old.Status, "expires_at": rot.Old.ExpiresAt}
+			write(w, out, nil)
 		case "dry-run":
 			if r.Method != http.MethodGet && r.Method != http.MethodPost {
 				http.NotFound(w, r)
@@ -677,6 +832,16 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		write(w, map[string]any{"policy": p.Policy, "dry_run": report}, nil)
+	case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/v1/keys/") && strings.HasSuffix(r.URL.Path, "/expiry"):
+		id := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/keys/"), "/expiry")
+		var req struct {
+			ExpiresAt *time.Time `json:"expires_at"`
+		}
+		if !decode(w, r, &req) {
+			return
+		}
+		k, err := h.Service.SetExpiry(r.Context(), id, req.ExpiresAt, actor, ip)
+		write(w, k, err)
 	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/keys/") && strings.HasSuffix(r.URL.Path, "/dry-run"):
 		id := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/v1/keys/"), "/dry-run")
 		rep, err := h.Service.DryRun(r.Context(), id)
@@ -741,9 +906,26 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *Handler) keyViews() []map[string]any {
+func createdView(token string, key model.VirtualKey) map[string]any {
+	return map[string]any{
+		"id": key.ID, "token": token, "kind": key.Kind, "status": key.Status, "name": key.Name,
+		"credential_id": key.CredentialID, "expires_at": key.ExpiresAt,
+	}
+}
+
+// keyViews is the key list with each key's last use, recent detection count,
+// and exposure findings. Activity is best effort: a store error leaves it out.
+func (h *Handler) keyViews(ctx context.Context) []map[string]any {
 	keys := h.Service.State.Keys()
 	sort.Slice(keys, func(i, j int) bool { return keys[i].ID < keys[j].ID })
+	now := h.Service.now()
+	var activity map[string]store.Activity
+	if h.Service.Store != nil {
+		a, err := h.Service.Store.KeyActivity(ctx, now.Add(-7*24*time.Hour))
+		if err == nil {
+			activity = a
+		}
+	}
 	var out []map[string]any
 	for _, k := range keys {
 		view := map[string]any{
@@ -751,8 +933,30 @@ func (h *Handler) keyViews() []map[string]any {
 			"status": k.Status, "expires_at": k.ExpiresAt, "paused_until": k.PausedUntil,
 			"dry_run_armed": k.DryRunArmed, "dry_run_blocked": k.DryRunBlocked, "created_at": k.CreatedAt,
 		}
+		facts := exposure.Facts{
+			Ref: k.ID, Kind: k.Kind, Status: k.Status, ExpiresAt: k.ExpiresAt, CreatedAt: k.CreatedAt,
+			Rotated: strings.HasSuffix(k.Name, RotatedSuffix),
+		}
+		if a, ok := activity[k.ID]; ok {
+			if !a.LastSeen.IsZero() {
+				view["last_seen_at"] = a.LastSeen
+				view["last_ip"] = a.LastIP
+				view["last_country"] = a.Country
+			}
+			view["detections_7d"] = a.Detections
+			facts.LastSeen = a.LastSeen
+		}
 		if p, ok := h.Service.State.Policy(k.ID); ok {
 			view["policy"] = p.Policy
+			facts.CIDRs = p.Policy.CIDRAllowlist
+			facts.Countries = p.Policy.CountryAllowlist
+		}
+		if activity != nil {
+			findings := exposure.Check(facts, now)
+			if findings == nil {
+				findings = []exposure.Finding{}
+			}
+			view["exposure"] = findings
 		}
 		if c, ok := h.Service.State.Credential(k.CredentialID); ok {
 			view["credential_last4"] = c.Last4

@@ -6,7 +6,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/kirank55/keman/internal/expiry"
 	kmodel "github.com/kirank55/keman/internal/model"
 	"github.com/kirank55/keman/internal/money"
 )
@@ -51,8 +53,9 @@ type policyDone struct {
 }
 
 type createdDone struct {
-	key CreatedKey
-	err error
+	key  CreatedKey
+	note string
+	err  error
 }
 
 type upstreamDone struct {
@@ -265,6 +268,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.errMsg = ""
 		m.token = msg.key.Token
 		m.tokenName = msg.key.Name
+		m.tokenKind = msg.key.Kind
+		m.tokenNote = msg.note
 		if m.tokenName == "" {
 			m.tokenName = msg.key.ID
 		}
@@ -345,7 +350,7 @@ func (m model) afterTick() (model, tea.Cmd) {
 
 func (m model) busy() bool {
 	switch m.overlay {
-	case overlayPolicy, overlayRevoke, overlayCreate, overlayUpstream, overlayCredential, overlayToken, overlayConfirm, overlayAdmin:
+	case overlayPolicy, overlayRevoke, overlayRotate, overlayCreate, overlayUpstream, overlayCredential, overlayToken, overlayConfirm, overlayAdmin:
 		return true
 	}
 	return m.filtering
@@ -382,6 +387,8 @@ func (m model) onKey(msg tea.KeyMsg) (model, tea.Cmd) {
 		return m.onToken(s)
 	case overlayRevoke:
 		return m.onRevoke(msg)
+	case overlayRotate:
+		return m.onRotate(msg.String())
 	case overlayConfirm:
 		return m.onConfirm(s)
 	case overlayPolicy:
@@ -405,6 +412,8 @@ func (m model) onToken(s string) (model, tea.Cmd) {
 	case "enter", "esc":
 		m.token = ""
 		m.tokenName = ""
+		m.tokenKind = ""
+		m.tokenNote = ""
 		m.overlay = overlayNone
 		m.loading = true
 		m.gen++
@@ -508,6 +517,10 @@ func (m model) onScreen(msg tea.KeyMsg) (model, tea.Cmd) {
 		if m.screen == screenKeys {
 			return m.openRevoke(), nil
 		}
+	case "r":
+		if m.screen == screenKeys {
+			return m.openRotate(), nil
+		}
 	case "p":
 		if m.screen == screenKeys {
 			return m.openPolicy()
@@ -550,6 +563,8 @@ func (m model) onDetail(msg tea.KeyMsg) (model, tea.Cmd) {
 		return m.beginStatus("enable")
 	case "x":
 		return m.openRevoke(), nil
+	case "r":
+		return m.openRotate(), nil
 	case "p":
 		return m.openPolicy()
 	case "?":
@@ -577,6 +592,47 @@ func (m model) onRevoke(msg tea.KeyMsg) (model, tea.Cmd) {
 	}
 }
 
+// rotateGraces are the choices for how long a replaced key keeps working.
+// The last one is the incident response: revoke the old key now.
+var rotateGraces = []struct {
+	label string
+	d     time.Duration
+}{
+	{"24 hours", 24 * time.Hour},
+	{"1 hour", time.Hour},
+	{"7 days", 7 * 24 * time.Hour},
+	{"none, revoke it now", 0},
+}
+
+func (m model) onRotate(s string) (model, tea.Cmd) {
+	switch s {
+	case "esc":
+		m.overlay = overlayNone
+		return m, nil
+	case "left":
+		m.rotateGrace = (m.rotateGrace + len(rotateGraces) - 1) % len(rotateGraces)
+	case "right":
+		m.rotateGrace = (m.rotateGrace + 1) % len(rotateGraces)
+	case "enter":
+		id, grace := m.rotateID, rotateGraces[m.rotateGrace].d
+		api, ctx := m.api, m.ctx
+		m.errMsg = ""
+		m.loading = true
+		return m, func() tea.Msg {
+			rot, err := api.RotateKey(ctx, id, grace)
+			note := ""
+			switch {
+			case rot.OldRevoked:
+				note = "The old key is revoked, renamed " + rot.OldName + "."
+			case rot.OldUntil != nil:
+				note = "The old key, renamed " + rot.OldName + ", works until " + fmtTime(*rot.OldUntil) + ". Move the app to this key before then."
+			}
+			return createdDone{key: rot.Key, note: note, err: err}
+		}
+	}
+	return m, nil
+}
+
 func (m model) onConfirm(s string) (model, tea.Cmd) {
 	switch s {
 	case "esc":
@@ -598,16 +654,16 @@ func (m model) onPolicy(msg tea.KeyMsg) (model, tea.Cmd) {
 		m.overlay = overlayNone
 		return m, nil
 	case "enter":
-		if m.polField < 3 {
+		if m.polField < policyFields-1 {
 			m.polField++
 			return m.focusPolicy()
 		}
 		return m.submitPolicy()
 	case "tab", "down":
-		m.polField = (m.polField + 1) % 4
+		m.polField = (m.polField + 1) % policyFields
 		return m.focusPolicy()
 	case "shift+tab", "up":
-		m.polField = (m.polField + 3) % 4
+		m.polField = (m.polField + policyFields - 1) % policyFields
 		return m.focusPolicy()
 	case "left":
 		if m.polField == 0 {
@@ -1078,6 +1134,24 @@ func (m model) openRevoke() model {
 	return m
 }
 
+func (m model) openRotate() model {
+	k, ok := m.currentKey()
+	if !ok {
+		m.errMsg = "no key selected"
+		return m
+	}
+	if k.Status == kmodel.StatusRevoked {
+		m.errMsg = "a revoked key cannot be rotated"
+		return m
+	}
+	m.rotateID = k.ID
+	m.rotateName = displayName(k)
+	m.rotateGrace = 0
+	m.overlay = overlayRotate
+	m.errMsg = ""
+	return m
+}
+
 func (m model) openPolicy() (model, tea.Cmd) {
 	k, ok := m.currentKey()
 	if !ok {
@@ -1093,7 +1167,16 @@ func (m model) openPolicy() (model, tea.Cmd) {
 	m.rpmInput.SetValue("")
 	m.dailyInput.SetValue("")
 	m.monthlyInput.SetValue("")
+	m.cidrInput.SetValue("")
+	m.countryInput.SetValue("")
+	m.expiresWas = ""
+	if k.ExpiresAt != nil {
+		m.expiresWas = k.ExpiresAt.UTC().Format(time.RFC3339)
+	}
+	m.expiresInput.SetValue(m.expiresWas)
 	if k.Policy != nil {
+		m.cidrInput.SetValue(strings.Join(k.Policy.CIDRs, ", "))
+		m.countryInput.SetValue(strings.Join(k.Policy.Countries, ", "))
 		m.polMode = modeIndex(k.Policy.Mode)
 		m.policyKeep = *k.Policy
 		if k.Policy.RPM != nil {
@@ -1183,6 +1266,11 @@ func (m model) submitPolicy() (model, tea.Cmd) {
 		m.errMsg = err.Error()
 		return m, nil
 	}
+	exp, expChanged, err := m.builtExpiry(time.Now())
+	if err != nil {
+		m.errMsg = "expires: " + err.Error()
+		return m, nil
+	}
 	id := m.policyID
 	confirm := m.policyConfirm
 	api := m.api
@@ -1191,8 +1279,25 @@ func (m model) submitPolicy() (model, tea.Cmd) {
 	m.loading = true
 	return m, func() tea.Msg {
 		_, err := api.PutPolicy(ctx, id, p, confirm)
+		if err == nil && expChanged {
+			err = api.SetExpiry(ctx, id, exp)
+		}
 		return policyDone{err: err}
 	}
+}
+
+// builtExpiry reads the expires field. changed is false when the field
+// still shows the key's current expiry, so an expired key is left alone.
+func (m model) builtExpiry(now time.Time) (at *time.Time, changed bool, err error) {
+	text := strings.TrimSpace(m.expiresInput.Value())
+	if text == m.expiresWas {
+		return nil, false, nil
+	}
+	if text == "" {
+		return nil, true, nil
+	}
+	at, err = expiry.Parse(text, now)
+	return at, err == nil, err
 }
 
 func (m model) builtPolicy() (Policy, error) {
@@ -1218,7 +1323,17 @@ func (m model) builtPolicy() (Policy, error) {
 	}
 	p.DailyCapMicro = daily
 	p.MonthlyCapMicro = monthly
+	p.CIDRs = splitList(m.cidrInput.Value())
+	p.Countries = nil
+	for _, c := range splitList(m.countryInput.Value()) {
+		p.Countries = append(p.Countries, strings.ToUpper(c))
+	}
 	return p, nil
+}
+
+// splitList reads a list separated by commas or spaces.
+func splitList(s string) []string {
+	return strings.FieldsFunc(s, func(r rune) bool { return r == ',' || r == ' ' || r == '\t' })
 }
 
 func parseUSD(s string) (*int64, error) {
@@ -1270,20 +1385,36 @@ func (m *model) cycleCreate(d int) {
 	}
 }
 
-func (m model) focusPolicy() (model, tea.Cmd) {
-	m.rpmInput.Blur()
-	m.dailyInput.Blur()
-	m.monthlyInput.Blur()
-	switch m.polField {
+// policyFields is the policy form, in order: mode, then who may use the
+// key (addresses, countries, expiry), then the rate limit and spend caps.
+const policyFields = 7
+
+func (m *model) policyInput(field int) *textinput.Model {
+	switch field {
 	case 1:
-		return m, m.rpmInput.Focus()
+		return &m.cidrInput
 	case 2:
-		return m, m.dailyInput.Focus()
+		return &m.countryInput
 	case 3:
-		return m, m.monthlyInput.Focus()
-	default:
-		return m, nil
+		return &m.expiresInput
+	case 4:
+		return &m.rpmInput
+	case 5:
+		return &m.dailyInput
+	case 6:
+		return &m.monthlyInput
 	}
+	return nil
+}
+
+func (m model) focusPolicy() (model, tea.Cmd) {
+	for f := 1; f < policyFields; f++ {
+		m.policyInput(f).Blur()
+	}
+	if in := m.policyInput(m.polField); in != nil {
+		return m, in.Focus()
+	}
+	return m, nil
 }
 
 func (m model) focusCreate() (model, tea.Cmd) {
@@ -1295,15 +1426,12 @@ func (m model) focusCreate() (model, tea.Cmd) {
 }
 
 func (m model) editPolicy(msg tea.Msg) (model, tea.Cmd) {
-	var cmd tea.Cmd
-	switch m.polField {
-	case 1:
-		m.rpmInput, cmd = m.rpmInput.Update(msg)
-	case 2:
-		m.dailyInput, cmd = m.dailyInput.Update(msg)
-	case 3:
-		m.monthlyInput, cmd = m.monthlyInput.Update(msg)
+	in := m.policyInput(m.polField)
+	if in == nil {
+		return m, nil
 	}
+	var cmd tea.Cmd
+	*in, cmd = in.Update(msg)
 	return m, cmd
 }
 
@@ -1356,7 +1484,7 @@ func (m model) textFocused() bool {
 func (m model) onLastField() bool {
 	switch m.overlay {
 	case overlayPolicy:
-		return m.polField == 3
+		return m.polField == policyFields-1
 	case overlayCreate:
 		return m.createField == 2
 	case overlayUpstream:
@@ -1484,6 +1612,8 @@ func (m model) currentKey() (Key, bool) {
 		return m.keyByID(m.detailID)
 	case overlayRevoke:
 		return m.keyByID(m.revokeID)
+	case overlayRotate:
+		return m.keyByID(m.rotateID)
 	case overlayPolicy, overlayConfirm:
 		return m.keyByID(m.policyID)
 	default:

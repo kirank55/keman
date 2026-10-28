@@ -3,7 +3,7 @@ package keyfmt
 import "testing"
 
 func FuzzParse(f *testing.F) {
-	f.Add("kmn_abcdefgh_abcdefghijklmnopqrstuvwxyz012345")
+	f.Add("kmn_abcdefgh_abcdefghijklmnopqrstuvwxyz012345") // keman:allow
 	f.Add("kmn_")
 	f.Add("")
 	f.Add("kma_abcdefghijklmnopqrstuvwxyz0123456789ABCDE")

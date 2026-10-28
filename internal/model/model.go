@@ -164,9 +164,20 @@ type Alert struct {
 	Rule     string         `json:"rule"`
 	Severity string         `json:"severity"`
 	KeyID    string         `json:"virtual_key_id"`
+	KeyName  string         `json:"virtual_key_name,omitempty"`
+	Kind     string         `json:"kind,omitempty"`
+	Summary  string         `json:"summary"`
 	Evidence map[string]any `json:"evidence"`
 	Baseline map[string]any `json:"baseline"`
 	Observed map[string]any `json:"observed"`
+	Actions  []AlertAction  `json:"actions"`
 	Commands []string       `json:"commands"`
 	FiredAt  time.Time      `json:"fired_at"`
+}
+
+// AlertAction is one response an operator can take, most decisive first.
+// Command is empty when the step happens outside Keman.
+type AlertAction struct {
+	When    string `json:"when"`
+	Command string `json:"command,omitempty"`
 }

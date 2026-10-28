@@ -30,6 +30,7 @@ const (
 	overlayConfirm
 	overlayHelp
 	overlayAdmin
+	overlayRotate
 )
 
 // Key is one virtual key as the terminal UI shows it.
@@ -46,6 +47,21 @@ type Key struct {
 	SpendToday    int64
 	SpendMonth    int64
 	SpendOpen     int64
+	CreatedAt     time.Time
+	LastSeen      time.Time
+	LastIP        string
+	LastCountry   string
+	Detections7d  int
+	Exposure      []Exposure
+}
+
+// Exposure is one way a leaked copy of the key would be more useful than it
+// needs to be, with the command that fixes it.
+type Exposure struct {
+	Code     string
+	Severity string
+	Message  string
+	Fix      string
 }
 
 // Policy is the editable limit set for a virtual key.
@@ -136,6 +152,14 @@ type CreatedKey struct {
 	Status string
 }
 
+// Rotation is a replacement key and what happened to the one it replaced.
+type Rotation struct {
+	Key        CreatedKey
+	OldName    string
+	OldUntil   *time.Time
+	OldRevoked bool
+}
+
 // ConfirmError means auto_disable was not saved. Report is the dry run.
 type ConfirmError struct {
 	Message string
@@ -163,6 +187,8 @@ type API interface {
 	AddUpstream(ctx context.Context, d UpstreamDraft) (Upstream, error)
 	AddCredential(ctx context.Context, d CredentialDraft) (Credential, error)
 	KeyUsage(ctx context.Context, id string) (KeyUsage, error)
+	SetExpiry(ctx context.Context, id string, at *time.Time) error
+	RotateKey(ctx context.Context, id string, grace time.Duration) (Rotation, error)
 }
 
 // KeyUsage is stored request activity for one virtual key.
@@ -262,6 +288,14 @@ type model struct {
 	rpmInput      textinput.Model
 	dailyInput    textinput.Model
 	monthlyInput  textinput.Model
+	cidrInput     textinput.Model
+	countryInput  textinput.Model
+	expiresInput  textinput.Model
+	expiresWas    string
+
+	rotateID    string
+	rotateName  string
+	rotateGrace int
 
 	createField int
 	createCred  int
@@ -291,6 +325,8 @@ type model struct {
 
 	token     string
 	tokenName string
+	tokenKind string
+	tokenNote string
 
 	errMsg string
 	note   string
@@ -312,6 +348,9 @@ func newModel(ctx context.Context, api API, base string) model {
 	m.rpmInput = bareInput(8, 12, "unlimited")
 	m.dailyInput = bareInput(16, 12, "no cap")
 	m.monthlyInput = bareInput(16, 12, "no cap")
+	m.cidrInput = bareInput(512, 40, "any address")
+	m.countryInput = bareInput(128, 20, "any country")
+	m.expiresInput = bareInput(32, 24, "never")
 	m.upName = bareInput(64, 24, "openrouter")
 	m.upHost = bareInput(128, 36, "openrouter.ai")
 	m.upPort = bareInput(5, 6, "443")

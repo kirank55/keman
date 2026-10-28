@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -29,7 +30,7 @@ func TestKeyViewIncludesSpend(t *testing.T) {
 		t.Fatal("reserve")
 	}
 	h := &Handler{Service: &Service{State: st, Clock: clk}}
-	views := h.keyViews()
+	views := h.keyViews(context.Background())
 	if len(views) != 1 {
 		t.Fatal(len(views))
 	}

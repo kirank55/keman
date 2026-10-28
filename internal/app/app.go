@@ -259,6 +259,7 @@ func Open(ctx context.Context, cfg config.Config, master []byte, opts ...Option)
 	a.svc = &admin.Service{
 		Store: st, State: mem, Box: box, Clock: b.clock, Rules: rules,
 		GeoCountry: geo != nil && geo.HasCountry(),
+		DefaultTTL: cfg.DefaultKeyTTL,
 		OnStatus: func(id, status string, paused time.Time) {
 			eng.NoteStatus(id, status, paused)
 		},
@@ -513,6 +514,9 @@ func (a *App) worker() {
 				},
 			}
 			for _, al := range out.Alerts {
+				if k, ok := a.state.Key(al.KeyID); ok {
+					al.KeyName = k.Name
+				}
 				if err := sender.Send(ctx, al); err != nil {
 					a.metrics.AlertsFailed.Inc()
 				} else {

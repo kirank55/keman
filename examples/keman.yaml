@@ -21,3 +21,6 @@ read_header_timeout: 10s
 upstream_dial_timeout: 10s
 upstream_response_header_timeout: 60s
 invalid_key_rpm: 60
+# New standard keys expire after this unless created with --expires never.
+# 0s turns the default off. Canary keys never expire by default.
+default_key_ttl: 2160h

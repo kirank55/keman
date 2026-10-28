@@ -41,6 +41,9 @@ func (s *Sender) Send(ctx context.Context, a model.Alert) error {
 	if s.Destinations == nil {
 		return nil
 	}
+	if a.Summary == "" {
+		a.Summary = Summary(a)
+	}
 	body, err := json.Marshal(a)
 	if err != nil {
 		return err
@@ -94,14 +97,70 @@ func (s *Sender) Send(ctx context.Context, a model.Alert) error {
 	return nil
 }
 
+// Summary is one line: what fired, on which key, and where the request came from.
+func Summary(a model.Alert) string {
+	key := a.KeyID
+	if a.KeyName != "" {
+		key = a.KeyName + " (" + a.KeyID + ")"
+	}
+	s := a.Rule + " on virtual key " + key
+	if where := Where(a.Observed); where != "" {
+		s += " from " + where
+	}
+	if op, _ := a.Observed["operation"].(string); op != "" {
+		s += " calling " + op
+	}
+	return s
+}
+
+// Where is the client address with its country and ASN when known.
+func Where(observed map[string]any) string {
+	ip, _ := observed["ip"].(string)
+	if ip == "" {
+		return ""
+	}
+	var extra []string
+	if c, _ := observed["country"].(string); c != "" {
+		extra = append(extra, c)
+	}
+	switch n := observed["asn"].(type) {
+	case int:
+		if n != 0 {
+			extra = append(extra, "AS"+strconv.Itoa(n))
+		}
+	case float64:
+		if n != 0 {
+			extra = append(extra, "AS"+strconv.FormatInt(int64(n), 10))
+		}
+	}
+	if len(extra) == 0 {
+		return ip
+	}
+	return ip + " (" + strings.Join(extra, ", ") + ")"
+}
+
 func slackText(a model.Alert) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "[%s] %s on virtual key %s\n", a.Severity, a.Rule, a.KeyID)
+	summary := a.Summary
+	if summary == "" {
+		summary = Summary(a)
+	}
+	fmt.Fprintf(&b, "[%s] %s\n", a.Severity, summary)
 	if len(a.Evidence) > 0 {
 		ev, _ := json.Marshal(a.Evidence)
 		b.WriteString("evidence: ")
 		b.Write(ev)
 		b.WriteByte('\n')
+	}
+	if len(a.Actions) > 0 {
+		b.WriteString("what to do:\n")
+		for _, act := range a.Actions {
+			b.WriteString("  " + act.When + "\n")
+			if act.Command != "" {
+				b.WriteString("    " + act.Command + "\n")
+			}
+		}
+		return b.String()
 	}
 	b.WriteString("commands:\n")
 	for _, c := range a.Commands {

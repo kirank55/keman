@@ -34,15 +34,20 @@ const helpText = `keman
 
 views     1 keys · 2 detections · 3 audit · 4 setup · tab next
 lists     j/k or arrows move · enter open · / filter this view
-keys      d disable · e enable · x revoke (type the name) · p policy
+keys      p policy: lock to addresses or countries, expiry, limits
+          r rotate (new key, old one stops later or now)
+          d disable · e enable · x revoke (type the name)
 setup     a add upstream · c add credential · n new virtual key
 forms     tab or arrows change field · left/right change a choice
           enter next field, then save · esc cancel
 quit      q, except while typing in a field · ctrl+c always
 
-Money is in dollars. Times are UTC.
+lock      open means a leaked copy works from anywhere. Set addresses in p.
+alerts    rules that fired on the key in the last 7 days.
+Times are UTC. Money is in dollars and only applies to LLM upstreams.
 Type the admin token when asked, unless KEMAN_ADMIN_TOKEN is set.
-Rotate, rekey, admin-token rotate, and alerts stay on the CLI.
+keman scan, keman exposure, keman canary, credential rotation,
+rekey, admin-token rotate, and alerts are on the CLI.
 `
 
 func (m model) View() string {
@@ -67,8 +72,9 @@ func (m model) View() string {
 	}
 	b.WriteString(m.statusLine())
 	b.WriteString("\n")
+	// No newline after the footer: it would make the frame one line taller
+	// than the terminal and scroll the header off the top.
 	b.WriteString(m.footer())
-	b.WriteString("\n")
 	return b.String()
 }
 
@@ -80,6 +86,8 @@ func (m model) renderBody() string {
 		return m.renderToken()
 	case overlayRevoke:
 		return m.renderRevoke()
+	case overlayRotate:
+		return m.renderRotate()
 	case overlayConfirm:
 		return m.renderConfirm()
 	case overlayPolicy:
@@ -174,6 +182,8 @@ func (m model) footerText() string {
 		return "enter clear it from the screen · q quit"
 	case overlayRevoke:
 		return "enter revoke · esc cancel"
+	case overlayRotate:
+		return "←/→ grace · enter rotate · esc cancel"
 	case overlayConfirm:
 		return "enter switch to auto_disable · esc back to the form"
 	case overlayPolicy, overlayCreate, overlayUpstream, overlayCredential:
@@ -183,7 +193,7 @@ func (m model) footerText() string {
 	case overlayHelp:
 		return "esc back · q quit"
 	case overlayDetail:
-		return "d disable · e enable · x revoke · p policy · j/k scroll · esc back · q quit"
+		return "p policy · r rotate · d disable · e enable · x revoke · j/k scroll · esc back · q quit"
 	}
 	switch m.screen {
 	case screenDetections:
@@ -193,7 +203,7 @@ func (m model) footerText() string {
 	case screenSetup:
 		return "a upstream · c credential · n new key · j/k scroll · 1-4 views · ? help · q quit"
 	default:
-		return "enter open · n new · d disable · e enable · x revoke · p policy · / filter · ? help · q quit"
+		return "enter open · n new · p policy · r rotate · d disable · x revoke · / filter · ? help · q quit"
 	}
 }
 
@@ -318,36 +328,145 @@ func (m model) renderKeys() string {
 		}
 		return b.String()
 	}
+	b.WriteString(m.exposureBanner())
 	cols := []column{
 		{title: "name", width: 16},
 		{title: "status", width: 9},
-		{title: "today", width: 18},
 		{title: "kind", width: 8},
-		{title: "daily cap", width: 10},
-		{title: "mode", width: 12, flex: true},
+		{title: "lock", width: 10},
+		{title: "alerts 7d", width: 9},
+		{title: "expires", width: 9},
+		{title: "last seen", width: 14, flex: true},
 	}
+	now := time.Now()
 	cells := make([][]cell, len(rows))
 	for i, k := range rows {
-		cap, mode := "—", "—"
-		if k.Kind != kmodel.KindCanary && k.Policy != nil {
-			mode = k.Policy.Mode
-			if mode == "" {
-				mode = kmodel.ModeAlertOnly
-			}
-			cap = capLine(k.Policy.DailyCapMicro)
+		lock, lockSt := lockLabel(k)
+		alerts := styled("0", dimStyle)
+		if k.Detections7d > 0 {
+			alerts = styled(strconv.Itoa(k.Detections7d), badStyle)
 		}
+		exp, expSt := expiresLabel(k, now)
 		cells[i] = []cell{
 			txt(displayName(k)),
 			styled(statusLabel(k), statusStyle(k)),
-			txt(todayLine(k)),
 			styled(kindLabel(k), kindStyle(k)),
-			txt(cap),
-			txt(mode),
+			styled(lock, lockSt),
+			alerts,
+			styled(exp, expSt),
+			txt(lastSeenLabel(k, now)),
 		}
 	}
 	start, end := m.span(len(rows))
 	b.WriteString(m.table(cols, cells, m.cursor, start, end))
 	return b.String()
+}
+
+// exposureBanner sums up the keys that would be easy to abuse if leaked.
+func (m model) exposureBanner() string {
+	open, never, idle := 0, 0, 0
+	for _, k := range m.keys {
+		for _, x := range k.Exposure {
+			switch x.Code {
+			case "network_open":
+				open++
+			case "no_expiry":
+				never++
+			case "idle":
+				idle++
+			}
+		}
+	}
+	var parts []string
+	if open > 0 {
+		parts = append(parts, plural(open, "key works", "keys work")+" from any address")
+	}
+	if never > 0 {
+		parts = append(parts, plural(never, "key never expires", "keys never expire"))
+	}
+	if idle > 0 {
+		parts = append(parts, plural(idle, "key is", "keys are")+" unused for 30+ days")
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return warnStyle.Render(fit("! "+strings.Join(parts, " · ")+" · open one and press p", m.totalWidth())) + "\n"
+}
+
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return "1 " + one
+	}
+	return strconv.Itoa(n) + " " + many
+}
+
+// lockLabel is what limits where the key works. open means anywhere.
+func lockLabel(k Key) (string, lipgloss.Style) {
+	if k.Kind == kmodel.KindCanary {
+		return "decoy", canaryStyle
+	}
+	var cidr, country bool
+	if k.Policy != nil {
+		cidr, country = len(k.Policy.CIDRs) > 0, len(k.Policy.Countries) > 0
+	}
+	switch {
+	case cidr && country:
+		return "ip+country", okStyle
+	case cidr:
+		return "ip", okStyle
+	case country:
+		return "country", okStyle
+	}
+	if k.Status != kmodel.StatusActive {
+		return "open", dimStyle
+	}
+	return "open", warnStyle
+}
+
+func expiresLabel(k Key, now time.Time) (string, lipgloss.Style) {
+	if k.ExpiresAt == nil {
+		if k.Kind == kmodel.KindCanary || k.Status != kmodel.StatusActive {
+			return "never", dimStyle
+		}
+		return "never", warnStyle
+	}
+	left := k.ExpiresAt.Sub(now)
+	switch {
+	case left <= 0:
+		return "expired", dimStyle
+	case left < 7*24*time.Hour:
+		return "in " + ago(left), warnStyle
+	default:
+		return "in " + ago(left), plainStyle
+	}
+}
+
+func lastSeenLabel(k Key, now time.Time) string {
+	if k.LastSeen.IsZero() {
+		return "never"
+	}
+	s := ago(now.Sub(k.LastSeen)) + " ago"
+	if k.LastIP != "" {
+		s += " · " + k.LastIP
+	}
+	if k.LastCountry != "" {
+		s += " " + k.LastCountry
+	}
+	return s
+}
+
+// ago is a short span such as 5m, 3h or 12d.
+func ago(d time.Duration) string {
+	switch {
+	case d < time.Minute:
+		return "<1m"
+	case d < time.Hour:
+		return strconv.Itoa(int(d/time.Minute)) + "m"
+	case d < 48*time.Hour:
+		return strconv.Itoa(int(d/time.Hour)) + "h"
+	default:
+		return strconv.Itoa(int(d/(24*time.Hour))) + "d"
+	}
 }
 
 func (m model) renderDetections() string {
@@ -487,61 +606,145 @@ func (m model) renderDetail() string {
 	w := m.totalWidth()
 	wide := w >= 100
 	u := m.detailUsage
-
-	head := titleStyle.Render(displayName(k)) + "  " + dimStyle.Render(k.ID) + "  " +
-		statusStyle(k).Render(statusLabel(k)) + "  " + kindStyle(k).Render(kindLabel(k))
-	panels := []string{panel("virtual key", head+"\n", w)}
-
-	var spend strings.Builder
-	spend.WriteString(kv("today", todayLine(k)))
-	spend.WriteString(kv("this month", usd(k.SpendMonth)))
-	if k.ExpiresAt != nil {
-		spend.WriteString(kv("expires", fmtTime(*k.ExpiresAt)))
-	}
-	if k.Policy != nil {
-		mode := k.Policy.Mode
-		if mode == "" {
-			mode = kmodel.ModeAlertOnly
+	now := time.Now()
+	side := func(lt, lc, rt, rc string) []string {
+		if wide {
+			return []string{pair(lt, lc, rt, rc, w)}
 		}
-		rpm := "unlimited"
+		return []string{panel(lt, lc, w), panel(rt, rc, w)}
+	}
+
+	var head strings.Builder
+	head.WriteString(titleStyle.Render(displayName(k)) + "  " + dimStyle.Render(k.ID) + "  " +
+		statusStyle(k).Render(statusLabel(k)) + "  " + kindStyle(k).Render(kindLabel(k)) + "\n")
+	switch {
+	case k.Kind == kmodel.KindCanary:
+		head.WriteString(canaryStyle.Render("decoy") + dimStyle.Render(" · any use raises a critical alert and never reaches the upstream") + "\n")
+	case len(k.Exposure) == 0 && k.Status == kmodel.StatusActive:
+		head.WriteString(okStyle.Render("✓ locked down") + dimStyle.Render(" · limited to known networks, expires, in use") + "\n")
+	}
+	for _, x := range k.Exposure {
+		head.WriteString(severityStyle(x.Severity).Render("! "+x.Message) + "\n")
+		head.WriteString(dimStyle.Render("  fix: "+x.Fix) + "\n")
+	}
+	panels := []string{panel("virtual key", head.String(), w)}
+
+	var access strings.Builder
+	cidrs, countries := dimStyle.Render("any"), dimStyle.Render("any")
+	if k.Kind != kmodel.KindCanary && (k.Policy == nil || len(k.Policy.CIDRs)+len(k.Policy.Countries) == 0) {
+		cidrs = warnStyle.Render("any address")
+	}
+	if k.Policy != nil && len(k.Policy.CIDRs) > 0 {
+		cidrs = strings.Join(k.Policy.CIDRs, ", ")
+	}
+	if k.Policy != nil && len(k.Policy.Countries) > 0 {
+		countries = strings.Join(k.Policy.Countries, ", ")
+	}
+	access.WriteString(kv("addresses", cidrs))
+	access.WriteString(kv("countries", countries))
+	exp, expSt := expiresLabel(k, now)
+	if k.ExpiresAt != nil {
+		exp += " · " + fmtTime(*k.ExpiresAt)
+	}
+	access.WriteString(kv("expires", expSt.Render(exp)))
+	mode, rpm := kmodel.ModeAlertOnly, "unlimited"
+	if k.Policy != nil {
+		if k.Policy.Mode != "" {
+			mode = k.Policy.Mode
+		}
 		if k.Policy.RPM != nil {
 			rpm = strconv.Itoa(*k.Policy.RPM) + " per minute"
 		}
-		spend.WriteString(kv("mode", mode))
-		spend.WriteString(kv("rate limit", rpm))
-		spend.WriteString(kv("daily cap", capLine(k.Policy.DailyCapMicro)))
-		spend.WriteString(kv("monthly cap", capLine(k.Policy.MonthlyCapMicro)))
-		if len(k.Policy.Models) > 0 {
-			spend.WriteString(kv("models", strings.Join(k.Policy.Models, ", ")))
-		}
-		if len(k.Policy.Paths) > 0 {
-			spend.WriteString(kv("paths", strings.Join(k.Policy.Paths, ", ")))
-		}
+	}
+	access.WriteString(kv("on abuse", mode))
+	access.WriteString(kv("rate limit", rpm))
+	if k.Policy != nil && len(k.Policy.Paths) > 0 {
+		access.WriteString(kv("paths", strings.Join(k.Policy.Paths, ", ")))
+	}
+	if k.Policy != nil && len(k.Policy.Models) > 0 {
+		access.WriteString(kv("models", strings.Join(k.Policy.Models, ", ")))
 	}
 
-	var usage string
+	var dets strings.Builder
+	if len(m.detailDets) == 0 {
+		dets.WriteString(okStyle.Render("none") + dimStyle.Render(" · no rule has fired on this key") + "\n")
+	}
+	for i := len(m.detailDets) - 1; i >= 0; i-- {
+		d := m.detailDets[i]
+		dets.WriteString(fmtTime(d.Time) + "  " + severityStyle(d.Severity).Render(fit(d.Severity, 8)) + "  " + d.Rule + "\n")
+	}
+	panels = append(panels, side("access · who can use it", access.String(), "detections · newest first", dets.String())...)
+
+	var clients strings.Builder
 	switch {
 	case !m.detailLoaded:
-		usage = "loading…\n"
-	case u.Requests == 0:
-		usage = dimStyle.Render("no requests yet") + "\n"
-	default:
-		usage = usageSummary(u)
-	}
-
-	var clients, models strings.Builder
-	switch {
-	case !m.detailLoaded || u.Requests == 0:
+		clients.WriteString("loading…\n")
+	case len(u.Clients) == 0:
 		clients.WriteString(dimStyle.Render("none") + "\n")
-		models.WriteString(dimStyle.Render("none") + "\n")
 	default:
-		if len(u.Clients) == 0 {
-			clients.WriteString(dimStyle.Render("none") + "\n")
-		}
 		for _, c := range u.Clients {
 			fmt.Fprintf(&clients, "%s  %d requests  last %s\n", clientWhere(c), c.Requests, fmtTime(c.LastSeen))
 		}
-		if len(u.Models) == 0 {
+	}
+	var activity string
+	switch {
+	case !m.detailLoaded:
+		activity = "loading…\n"
+	case u.Requests == 0:
+		activity = dimStyle.Render("no requests yet") + "\n"
+	default:
+		activity = activitySummary(u)
+	}
+	panels = append(panels, side("clients · who called", clients.String(), "activity", activity)...)
+
+	llm := k.Kind != kmodel.KindCanary && m.isLLM(k)
+	var recent strings.Builder
+	if !m.detailLoaded || len(u.Recent) == 0 {
+		recent.WriteString(dimStyle.Render("none") + "\n")
+	}
+	for _, r := range u.Recent {
+		status := strconv.Itoa(r.Status)
+		st := okStyle
+		if r.Status >= 400 {
+			st = badStyle
+		}
+		line := fmtTime(r.Time) + "  " + st.Render(status) + "  " + fmt.Sprintf("%dms", r.LatencyMS) + "  " + clientWhere(UsageClient{IP: r.IP, Country: r.Country, ASN: r.ASN})
+		if r.BlockedCode != "" {
+			line += "  " + badStyle.Render(r.BlockedCode)
+		}
+		recent.WriteString(line + "\n")
+		detail := "  " + dimStyle.Render(r.Operation)
+		if llm {
+			modelName := r.Model
+			if modelName == "" {
+				modelName = "—"
+			}
+			cost := "—"
+			if r.CostMicro != nil {
+				cost = usd(*r.CostMicro)
+				if r.CostEstimated {
+					cost += " estimated"
+				}
+			}
+			detail += fmt.Sprintf("  %s  in %d · out %d  %s", modelName, r.TokensIn, r.TokensOut, cost)
+		}
+		recent.WriteString(detail + "\n")
+	}
+	panels = append(panels, panel("recent requests · newest first", recent.String(), w))
+
+	if llm {
+		var spend strings.Builder
+		spend.WriteString(kv("today", todayLine(k)))
+		spend.WriteString(kv("this month", usd(k.SpendMonth)))
+		if k.Policy != nil {
+			spend.WriteString(kv("daily cap", capLine(k.Policy.DailyCapMicro)))
+			spend.WriteString(kv("monthly cap", capLine(k.Policy.MonthlyCapMicro)))
+		}
+		if m.detailLoaded && u.Requests > 0 {
+			spend.WriteString(spendSummary(u))
+		}
+		var models strings.Builder
+		if !m.detailLoaded || len(u.Models) == 0 {
 			models.WriteString(dimStyle.Render("none") + "\n")
 		}
 		for _, item := range u.Models {
@@ -555,59 +758,25 @@ func (m model) renderDetail() string {
 			}
 			fmt.Fprintf(&models, "%s  %d requests  in %d · out %d  %s\n", name, item.Requests, item.TokensIn, item.TokensOut, cost)
 		}
+		panels = append(panels, side("spend", spend.String(), "models · what was called", models.String())...)
 	}
+	return strings.Join(panels, "\n") + "\n"
+}
 
-	if wide {
-		panels = append(panels,
-			pair("spend and limits", spend.String(), "usage", usage, w),
-			pair("clients · who called", clients.String(), "models · what was called", models.String(), w))
-	} else {
-		panels = append(panels,
-			panel("spend and limits", spend.String(), w),
-			panel("usage", usage, w),
-			panel("clients · who called", clients.String(), w),
-			panel("models · what was called", models.String(), w))
-	}
-
-	var recent strings.Builder
-	if !m.detailLoaded || len(u.Recent) == 0 {
-		recent.WriteString(dimStyle.Render("none") + "\n")
-	}
-	for _, r := range u.Recent {
-		modelName := r.Model
-		if modelName == "" {
-			modelName = "—"
+// isLLM reports whether the key's upstream tracks tokens and spend. When the
+// setup lists have not loaded, it says yes so nothing is hidden.
+func (m model) isLLM(k Key) bool {
+	for _, c := range m.creds {
+		if c.ID != k.CredentialID {
+			continue
 		}
-		status := strconv.Itoa(r.Status)
-		st := okStyle
-		if r.Status >= 400 {
-			st = badStyle
-		}
-		line := fmtTime(r.Time) + "  " + st.Render(status) + "  " + fmt.Sprintf("%dms", r.LatencyMS) + "  " + r.IP + "  " + modelName
-		if r.BlockedCode != "" {
-			line += "  " + badStyle.Render(r.BlockedCode)
-		}
-		recent.WriteString(line + "\n")
-		cost := "—"
-		if r.CostMicro != nil {
-			cost = usd(*r.CostMicro)
-			if r.CostEstimated {
-				cost += " estimated"
+		for _, u := range m.ups {
+			if u.ID == c.UpstreamID {
+				return u.Profile != "generic"
 			}
 		}
-		fmt.Fprintf(&recent, "  %s  in %d · out %d  %s\n", dimStyle.Render(r.Operation), r.TokensIn, r.TokensOut, cost)
 	}
-	panels = append(panels, panel("recent requests · newest first", recent.String(), w))
-
-	var dets strings.Builder
-	if len(m.detailDets) == 0 {
-		dets.WriteString(okStyle.Render("none") + dimStyle.Render(" · no rule has fired on this key") + "\n")
-	}
-	for _, d := range m.detailDets {
-		dets.WriteString(fmtTime(d.Time) + "  " + severityStyle(d.Severity).Render(fit(d.Severity, 8)) + "  " + d.Rule + "\n")
-	}
-	panels = append(panels, panel("detections · rules that fired", dets.String(), w))
-	return strings.Join(panels, "\n") + "\n"
+	return true
 }
 
 // panel draws a rounded box with its title in the top border. Lines wider
@@ -646,12 +815,27 @@ func pair(lt, lc, rt, rc string, width int) string {
 	return lipgloss.JoinHorizontal(lipgloss.Top, panel(lt, pad(lc), lw), panel(rt, pad(rc), width-lw))
 }
 
-func usageSummary(u KeyUsage) string {
+func activitySummary(u KeyUsage) string {
 	var b strings.Builder
 	b.WriteString(kv("requests", strconv.Itoa(u.Requests)+" total"))
 	if !u.LastSeen.IsZero() {
 		b.WriteString(kv("last seen", fmtTime(u.LastSeen)))
 	}
+	b.WriteString(kv("addresses", strconv.Itoa(len(u.Clients))))
+	blocked := 0
+	for _, r := range u.Recent {
+		if r.BlockedCode != "" {
+			blocked++
+		}
+	}
+	if blocked > 0 {
+		b.WriteString(kv("blocked", badStyle.Render(strconv.Itoa(blocked))+dimStyle.Render(" of the last "+strconv.Itoa(len(u.Recent)))))
+	}
+	return b.String()
+}
+
+func spendSummary(u KeyUsage) string {
+	var b strings.Builder
 	tokens := fmt.Sprintf("in %d · out %d", u.TokensIn, u.TokensOut)
 	if u.Cached > 0 {
 		tokens += fmt.Sprintf(" · cached %d", u.Cached)
@@ -715,18 +899,25 @@ func fieldLine(on bool, label, value string, choice bool) string {
 
 var policyHints = []string{
 	"alert_only alerts · dry_run records what auto_disable would do · auto_disable turns the key off",
+	"Allowed client addresses, comma separated, such as 203.0.113.7/32. Empty allows any.",
+	"Two-letter country codes, such as US, DE. Needs a GeoIP database. Empty allows any.",
+	"When the key stops working: 30d, 2026-12-31, an RFC3339 time, or empty for never.",
 	"Requests per minute. Leave empty for no limit.",
-	"Dollars per UTC day, such as 1.50. Leave empty for no cap.",
-	"Dollars per UTC month, such as 20. Leave empty for no cap.",
+	"Dollars per UTC day, such as 1.50. LLM upstreams only. Leave empty for no cap.",
+	"Dollars per UTC month, such as 20. LLM upstreams only. Leave empty for no cap.",
 }
 
 func (m model) renderPolicy() string {
-	return m.form("policy · "+m.policyName, []string{
-		fieldLine(m.polField == 0, "mode", policyModes[m.polMode], true),
-		fieldLine(m.polField == 1, "rpm", m.rpmInput.View(), false),
-		fieldLine(m.polField == 2, "daily $", m.dailyInput.View(), false),
-		fieldLine(m.polField == 3, "monthly $", m.monthlyInput.View(), false),
-	}, policyHints[m.polField]+"\nPath, model, and network allowlists on this key are kept.")
+	rows := []string{
+		fieldLine(m.polField == 0, "on abuse", policyModes[m.polMode], true),
+		fieldLine(m.polField == 1, "addresses", m.cidrInput.View(), false),
+		fieldLine(m.polField == 2, "countries", m.countryInput.View(), false),
+		fieldLine(m.polField == 3, "expires", m.expiresInput.View(), false),
+		fieldLine(m.polField == 4, "rpm", m.rpmInput.View(), false),
+		fieldLine(m.polField == 5, "daily $", m.dailyInput.View(), false),
+		fieldLine(m.polField == 6, "monthly $", m.monthlyInput.View(), false),
+	}
+	return m.form("policy · "+m.policyName, rows, policyHints[m.polField]+"\nPath and model allowlists on this key are kept.")
 }
 
 var upstreamHints = []string{
@@ -839,6 +1030,13 @@ func (m model) renderRevoke() string {
 	}, "Revoke is permanent. Type "+m.revokeExpect+" to confirm. Disable (d) is reversible.")
 }
 
+func (m model) renderRotate() string {
+	return m.form("rotate · "+m.rotateName, []string{
+		fieldLine(true, "old key", rotateGraces[m.rotateGrace].label, true),
+	}, "A new key is issued with the same credential and policy, and shown once.\n"+
+		"The old key keeps working for the grace period, then expires. Choose none if it leaked.")
+}
+
 func (m model) renderConfirm() string {
 	name := m.policyName
 	if name == "" {
@@ -874,6 +1072,14 @@ func (m model) renderToken() string {
 	b.WriteString("\n\n")
 	b.WriteString(warnStyle.Render("Copy it now. It is shown once."))
 	b.WriteString("\n")
+	if m.tokenNote != "" {
+		b.WriteString("\n" + m.tokenNote + "\n")
+	}
+	if m.tokenKind == kmodel.KindCanary {
+		b.WriteString("\nThis is a decoy. Plant it where a thief would look: a .env in a repo, CI variables,\n")
+		b.WriteString("an old config. Any use raises a critical alert. keman canary create prints it as\n")
+		b.WriteString("ready-made .env lines with the proxy URL.\n")
+	}
 	return b.String()
 }
 
@@ -934,6 +1140,9 @@ func (m model) rowBudget() int {
 		return 20
 	}
 	n := m.bodyBudget() - 2
+	if m.screen == screenKeys && m.overlay == overlayNone && m.exposureBanner() != "" {
+		n--
+	}
 	if n < 1 {
 		n = 1
 	}

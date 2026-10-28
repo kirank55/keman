@@ -18,6 +18,17 @@ type keyWire struct {
 	SpendToday    int64       `json:"spend_today_microusd"`
 	SpendMonth    int64       `json:"spend_month_microusd"`
 	SpendOpen     int64       `json:"spend_open_microusd"`
+	CreatedAt     time.Time   `json:"created_at"`
+	LastSeen      *time.Time  `json:"last_seen_at"`
+	LastIP        string      `json:"last_ip"`
+	LastCountry   string      `json:"last_country"`
+	Detections7d  int         `json:"detections_7d"`
+	Exposure      []struct {
+		Code     string `json:"code"`
+		Severity string `json:"severity"`
+		Message  string `json:"message"`
+		Fix      string `json:"fix"`
+	} `json:"exposure"`
 }
 
 type policyWire struct {
@@ -36,6 +47,13 @@ func (w keyWire) toKey() Key {
 		ID: w.ID, Name: w.Name, CredentialID: w.CredentialID, Kind: w.Kind, Status: w.Status,
 		ExpiresAt: w.ExpiresAt, DryRunArmed: w.DryRunArmed, DryRunBlocked: w.DryRunBlocked,
 		SpendToday: w.SpendToday, SpendMonth: w.SpendMonth, SpendOpen: w.SpendOpen,
+		CreatedAt: w.CreatedAt, LastIP: w.LastIP, LastCountry: w.LastCountry, Detections7d: w.Detections7d,
+	}
+	if w.LastSeen != nil {
+		k.LastSeen = *w.LastSeen
+	}
+	for _, x := range w.Exposure {
+		k.Exposure = append(k.Exposure, Exposure{Code: x.Code, Severity: x.Severity, Message: x.Message, Fix: x.Fix})
 	}
 	if w.Policy != nil {
 		p := Policy{

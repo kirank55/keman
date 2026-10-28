@@ -24,6 +24,9 @@ type fakeAPI struct {
 	token      string
 	upDrafts   []UpstreamDraft
 	credDrafts []CredentialDraft
+	lastPolicy Policy
+	expiries   []*time.Time
+	rotations  []time.Duration
 }
 
 func (f *fakeAPI) ListKeys(context.Context) ([]Key, error) {
@@ -48,8 +51,12 @@ func (f *fakeAPI) SetStatus(_ context.Context, id, action string) error {
 	f.status = append(f.status, action+":"+id)
 	return nil
 }
-func (f *fakeAPI) PutPolicy(_ context.Context, _ string, _ Policy, confirm bool) (DryRun, error) {
+func (f *fakeAPI) PutPolicy(_ context.Context, _ string, p Policy, confirm bool) (DryRun, error) {
 	f.policies = append(f.policies, confirm)
+	f.lastPolicy = p
+	if p.Mode != kmodel.ModeAutoDisable {
+		return DryRun{}, nil
+	}
 	if !confirm {
 		return DryRun{WouldDisable: true, Detections: 3, RequestsWouldBlock: 2}, &ConfirmError{
 			Message: "needs confirmation",
@@ -63,6 +70,17 @@ func (f *fakeAPI) CreateKey(context.Context, string, string, string) (CreatedKey
 }
 func (f *fakeAPI) KeyUsage(context.Context, string) (KeyUsage, error) {
 	return KeyUsage{}, nil
+}
+func (f *fakeAPI) SetExpiry(_ context.Context, _ string, at *time.Time) error {
+	f.expiries = append(f.expiries, at)
+	return nil
+}
+func (f *fakeAPI) RotateKey(_ context.Context, id string, grace time.Duration) (Rotation, error) {
+	f.rotations = append(f.rotations, grace)
+	return Rotation{
+		Key:     CreatedKey{ID: "new12345", Name: "laptop", Token: "kmn_rotated_once", Kind: kmodel.KindStandard},
+		OldName: "laptop (rotated)", OldRevoked: grace == 0,
+	}, nil
 }
 func (f *fakeAPI) AddUpstream(_ context.Context, d UpstreamDraft) (Upstream, error) {
 	f.upDrafts = append(f.upDrafts, d)
@@ -122,13 +140,27 @@ func keyMsg(k string) tea.KeyMsg {
 	}
 }
 
-func TestKeysShowDollars(t *testing.T) {
+func TestKeysShowLockExpiryAndAlerts(t *testing.T) {
 	m := sample(&fakeAPI{})
+	m.keys[0].Exposure = []Exposure{{Code: "network_open", Severity: "high"}, {Code: "no_expiry", Severity: "medium"}}
+	m.keys[0].Detections7d = 2
+	m.keys[0].LastSeen = time.Now().Add(-5 * time.Minute)
+	m.keys[0].LastIP = "203.0.113.7"
 	view := m.View()
-	if !strings.Contains(view, "laptop") || !strings.Contains(view, "$0.42") || !strings.Contains(view, "$1.5") {
-		t.Fatal(view)
+	for _, want := range []string{"lock", "open", "never", "5m ago · 203.0.113.7", "1 key works from any address", "1 key never expires"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("missing %q\n%s", want, view)
+		}
 	}
-	if strings.Contains(view, "microusd") {
+	if strings.Contains(view, "$") {
+		t.Fatalf("the key list should not show money\n%s", view)
+	}
+	m.keys[0].Policy.CIDRs = []string{"10.0.0.0/8"}
+	m.keys[0].Exposure = nil
+	exp := time.Now().Add(40 * 24 * time.Hour)
+	m.keys[0].ExpiresAt = &exp
+	view = m.View()
+	if !strings.Contains(view, "ip") || !strings.Contains(view, "in 39d") || strings.Contains(view, "from any address") {
 		t.Fatal(view)
 	}
 }
@@ -207,7 +239,7 @@ func TestTokenShownOnce(t *testing.T) {
 func TestAutoDisableConfirms(t *testing.T) {
 	f := &fakeAPI{}
 	m := sample(f)
-	m, cmd := press(m, "p", "right", "right", "enter", "enter", "enter", "enter")
+	m, cmd := press(m, "p", "right", "right", "enter", "enter", "enter", "enter", "enter", "enter", "enter")
 	if cmd == nil {
 		t.Fatal("policy")
 	}
@@ -261,15 +293,80 @@ func TestPollPausesWhileRevoking(t *testing.T) {
 	}
 }
 
-func TestNarrowDropsCapColumn(t *testing.T) {
+func TestNarrowDropsLastSeenColumn(t *testing.T) {
 	m := sample(&fakeAPI{})
 	m.width = 60
 	view := m.View()
-	if strings.Contains(view, "alert_only") {
+	if strings.Contains(view, "last seen") {
 		t.Fatal(view)
 	}
-	if !strings.Contains(view, "$0.42") {
+	if !strings.Contains(view, "lock") || !strings.Contains(view, "open") {
 		t.Fatal(view)
+	}
+}
+
+func TestPolicyFormLocksAddressesAndExpiry(t *testing.T) {
+	f := &fakeAPI{}
+	m := sample(f)
+	m, _ = press(m, "p", "down")
+	m = typeText(m, "203.0.113.7/32, 10.0.0.0/8")
+	m, _ = press(m, "down")
+	m = typeText(m, "us de")
+	m, _ = press(m, "down")
+	m = typeText(m, "30d")
+	m, cmd := press(m, "enter", "enter", "enter", "enter")
+	if cmd == nil {
+		t.Fatal("policy not saved")
+	}
+	if _, ok := cmd().(policyDone); !ok {
+		t.Fatal("expected policyDone")
+	}
+	if got := strings.Join(f.lastPolicy.CIDRs, " "); got != "203.0.113.7/32 10.0.0.0/8" {
+		t.Fatalf("cidrs %q", got)
+	}
+	if got := strings.Join(f.lastPolicy.Countries, " "); got != "US DE" {
+		t.Fatalf("countries %q", got)
+	}
+	if f.lastPolicy.DailyCapMicro == nil || *f.lastPolicy.DailyCapMicro != 1_500_000 {
+		t.Fatal("the daily cap was lost")
+	}
+	if len(f.expiries) != 1 || f.expiries[0] == nil || f.expiries[0].Sub(time.Now()) < 29*24*time.Hour {
+		t.Fatalf("expiry %v", f.expiries)
+	}
+
+	f = &fakeAPI{}
+	m = sample(f)
+	m, cmd = press(m, "p", "enter", "enter", "enter", "enter", "enter", "enter", "enter")
+	_ = cmd()
+	if len(f.expiries) != 0 {
+		t.Fatal("an unchanged expiry was sent")
+	}
+}
+
+func TestRotateShowsTheNewTokenOnce(t *testing.T) {
+	f := &fakeAPI{}
+	m := sample(f)
+	m, _ = press(m, "r")
+	if m.overlay != overlayRotate || !strings.Contains(m.View(), "24 hours") {
+		t.Fatal(m.View())
+	}
+	m, _ = press(m, "left")
+	if !strings.Contains(m.View(), "revoke it now") {
+		t.Fatal(m.View())
+	}
+	m, cmd := press(m, "enter")
+	next, _ := m.Update(cmd())
+	m = next.(model)
+	view := m.View()
+	if len(f.rotations) != 1 || f.rotations[0] != 0 {
+		t.Fatal(f.rotations)
+	}
+	if !strings.Contains(view, "kmn_rotated_once") || !strings.Contains(view, "old key is revoked") {
+		t.Fatal(view)
+	}
+	m, _ = press(m, "enter")
+	if strings.Contains(m.View(), "kmn_rotated_once") {
+		t.Fatal("token still on screen")
 	}
 }
 
@@ -533,7 +630,7 @@ func assertFits(t *testing.T, name string, m model) {
 		}
 	}
 	if m.height > 0 {
-		if n := strings.Count(view, "\n"); n != m.height {
+		if n := strings.Count(view, "\n") + 1; n != m.height {
 			t.Fatalf("%s at %d columns: %d lines, want %d", name, m.width, n, m.height)
 		}
 	}

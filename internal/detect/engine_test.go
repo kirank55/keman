@@ -142,13 +142,35 @@ func TestExpiredKeyDoesNotFeedBehaviorRules(t *testing.T) {
 }
 
 func TestCommandsUsesIPv6HostPrefix(t *testing.T) {
-	cmds := Commands("abc12345", "2001:db8::1", "US")
+	cmds := Commands(Actions("abc12345", "2001:db8::1", "US", model.KindStandard, RuleCountry))
 	joined := stringsJoin(cmds)
 	if !stringsContains(joined, "2001:db8::1/128") {
 		t.Fatalf("%v", cmds)
 	}
 	if stringsContains(joined, "2001:db8::1/32") {
 		t.Fatalf("IPv6 /32: %v", cmds)
+	}
+}
+
+func TestActionsPutRevocationFirst(t *testing.T) {
+	acts := Actions("abc12345", "203.0.113.9", "DE", model.KindStandard, RuleCountry)
+	if len(acts) < 3 || acts[0].Command != "keman key rotate abc12345 --grace 0" {
+		t.Fatalf("%+v", acts)
+	}
+	for _, a := range acts {
+		if stringsContains(a.Command, "--daily-usd") {
+			t.Fatalf("spend cap offered as a leak response: %+v", acts)
+		}
+	}
+	canary := Actions("abc12345", "203.0.113.9", "DE", model.KindCanary, RuleCanary)
+	for _, a := range canary {
+		if stringsContains(a.Command, "--cidr") {
+			t.Fatalf("canary offers to allow the thief: %+v", canary)
+		}
+	}
+	disabled := Actions("abc12345", "203.0.113.9", "DE", model.KindStandard, RuleDisabled)
+	if len(disabled) != 2 {
+		t.Fatalf("disabled key offers allowlisting: %+v", disabled)
 	}
 }
 

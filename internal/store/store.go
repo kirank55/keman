@@ -339,6 +339,70 @@ func (s *Store) UpdateKeyStatus(ctx context.Context, id, status string, paused *
 	return nil
 }
 
+// UpdateKeyLifecycle sets a key's name and expiry. A nil expiry means it never expires.
+func (s *Store) UpdateKeyLifecycle(ctx context.Context, id, name string, expires *time.Time) error {
+	res, err := s.db.ExecContext(ctx, `UPDATE virtual_keys SET name = ?, expires_at = ? WHERE id = ?`, name, fmtTimePtr(expires), id)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+// Activity is where a key was last used from, and how often rules fired on it.
+type Activity struct {
+	LastSeen   time.Time
+	LastIP     string
+	Country    string
+	Detections int
+}
+
+// KeyActivity returns the newest event and the detection count since
+// detectionsSince for every key that has either.
+func (s *Store) KeyActivity(ctx context.Context, detectionsSince time.Time) (map[string]Activity, error) {
+	out := map[string]Activity{}
+	rows, err := s.db.QueryContext(ctx, `SELECT e.virtual_key_id, e.ts, e.ip, e.country FROM events e
+		JOIN (SELECT virtual_key_id, MAX(id) AS id FROM events GROUP BY virtual_key_id) last ON last.id = e.id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id, ts string
+		var a Activity
+		if err := rows.Scan(&id, &ts, &a.LastIP, &a.Country); err != nil {
+			return nil, err
+		}
+		a.LastSeen, _ = parseTime(ts)
+		out[id] = a
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	drows, err := s.db.QueryContext(ctx, `SELECT virtual_key_id, COUNT(*) FROM detections WHERE ts >= ? GROUP BY virtual_key_id`, fmtTime(detectionsSince))
+	if err != nil {
+		return nil, err
+	}
+	defer drows.Close()
+	for drows.Next() {
+		var id string
+		var n int
+		if err := drows.Scan(&id, &n); err != nil {
+			return nil, err
+		}
+		a := out[id]
+		a.Detections = n
+		out[id] = a
+	}
+	return out, drows.Err()
+}
+
 func (s *Store) UpsertPolicy(ctx context.Context, p model.Policy) error {
 	_, err := s.db.ExecContext(ctx, `INSERT INTO policies (virtual_key_id, mode, rpm, daily_cap_micro, monthly_cap_micro, path_allowlist, model_allowlist, cidr_allowlist, country_allowlist, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
