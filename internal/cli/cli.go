@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -950,39 +949,6 @@ func (c *cmd) alert(args []string) int {
 	}
 }
 
-func (c *cmd) detection(args []string) int {
-	if len(args) == 0 || args[0] != "list" {
-		fmt.Fprintln(c.stderr, "usage: keman detection list [--key id]")
-		return 2
-	}
-	f := newFlags(args[1:])
-	key := f.str("key")
-	if err := f.done(); err != nil {
-		fmt.Fprintln(c.stderr, err.Error())
-		return 2
-	}
-	api, err := c.api()
-	if err != nil {
-		fmt.Fprintln(c.stderr, err.Error())
-		return 1
-	}
-	path := "/v1/detections"
-	if key != "" {
-		id, err := c.resolveKey(api, key)
-		if err != nil {
-			fmt.Fprintln(c.stderr, err.Error())
-			return 1
-		}
-		path += "?key_id=" + url.QueryEscape(id)
-	}
-	var out any
-	if err := api.call(c.ctx, http.MethodGet, path, nil, &out); err != nil {
-		fmt.Fprintln(c.stderr, err.Error())
-		return 1
-	}
-	return c.printJSON(out)
-}
-
 func (c *cmd) audit(args []string) int {
 	if len(args) == 0 || args[0] != "list" {
 		fmt.Fprintln(c.stderr, "usage: keman audit list")
@@ -1124,6 +1090,7 @@ func newFlags(args []string) *flagSet {
 	boolNames := map[string]bool{
 		"tls": true, "insecure": true, "no-inject-usage": true, "userpass": true, "yes": true,
 		"no-expiry": true, "strict": true, "history": true, "json": true,
+		"learned": true, "expect-disable": true, "list": true, "live": true,
 	}
 	for i := 0; i < len(args); i++ {
 		a := args[i]
@@ -1226,6 +1193,9 @@ Find and contain leaks
   keman key rotate <id-or-name> [--grace 24h]  new key now; the old one stops after the grace (0 revokes)
   keman key revoke <id-or-name>
   keman detection list [--key id]
+  keman detection test [--scenario name] [--json]
+  keman detection test --file events.jsonl [--learned] [--expect rule,rule] [--expect-disable]
+  keman detection test --live --secret-file virtual.key [--proxy URL]
 
 Set up
   keman init

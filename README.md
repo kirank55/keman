@@ -83,7 +83,7 @@ Back in the UI, select the key and press Enter to see who called it and from whe
 ./scripts/quickstart.sh
 ```
 
-The script builds Keman, initializes `.quickstart/`, starts a mock OpenAI server, creates a virtual key, and sends one request through the proxy. It prints the command to open the UI on that install. Set `KEMAN_QUICKSTART_PROXY_PORT` and `KEMAN_QUICKSTART_ADMIN_PORT` if 8080 or 8081 is taken.
+The script builds Keman, initializes `.quickstart/`, starts a mock OpenAI server, creates a virtual key, sends one request through the proxy, then fires an allowlist detection with `keman detection test --live`. It prints the command to open the UI on that install. Set `KEMAN_QUICKSTART_PROXY_PORT` and `KEMAN_QUICKSTART_ADMIN_PORT` if 8080 or 8081 is taken.
 
 ## The terminal UI
 
@@ -145,6 +145,8 @@ export KEMAN_ADMIN_TOKEN=kma_...
 ./keman key revoke laptop
 ./keman exposure --strict
 ./keman scan . --history
+./keman detection test
+./keman detection test --file events.jsonl --learned --expect spend_spike,new_country
 ./keman canary create --credential primary --name repo-decoy --base-url https://keman.example.com
 ./keman credential rotate primary --secret-env OPENAI_API_KEY
 ./keman alert add --kind webhook --url https://example.invalid/hook --secret-file ./hook.secret
@@ -159,6 +161,9 @@ The proxy listens on `0.0.0.0:8080`. The admin API and `/metrics` listen on `127
 ## Detection
 
 - A new key learns for 7 days or 500 requests before spike and new-location rules alert. Normal traffic does not create detections.
+- `keman detection test` replays built-in abuse scenarios and prints what would alert, including whether auto-disable and dry-run would trip. It runs on a fresh engine: it does not start the proxy, deliver alerts, or change a key. Exit code 1 means a scenario missed its expected result.
+- `keman detection test --live --secret-file virtual.key` needs a running server. It sends five requests to a path the allowlist refuses, then waits until `allowlist_violations` is stored. `--proxy` overrides `proxy_listen` from the config. `./scripts/quickstart.sh` runs this against `.quickstart/`.
+- `keman detection test --file events.jsonl` replays your own events, as a JSON array or as JSONL. Use `-` to read stdin. Each object can set `time`, `key_id`, `kind`, `ip`, `country`, `asn`, `status`, `cost_micro`, `model`, `blocked_code`, and `mode` (`alert_only` when omitted). `--learned` seeds every key with a baseline past learning: 500 requests, country US, ASN 64500, first seen 8 days before that key's first event. `--expect rate_spike,new_country` exits 1 when one of those rules does not fire. `--expect-disable` exits 1 unless auto-disable would disable the key, which requires `mode` `auto_disable` on the events.
 - Rules: rate spike, spend spike, new country, new ASN, repeated allowlist violations, a burst of upstream auth errors, use of a disabled or revoked key, and canary use.
 - Canary keys (`--kind canary`) answer with the profile's own 401 and raise a critical alert. They never reach the upstream.
 - Country and ASN rules, and country allowlists, need a GeoLite2 or DB-IP `.mmdb` file in `geoip_country_db` and `geoip_asn_db`.

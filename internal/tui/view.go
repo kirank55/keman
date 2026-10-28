@@ -57,8 +57,8 @@ lock      open means a leaked copy works from anywhere. Set addresses in p.
 alerts    rules that fired on the key in the last 7 days.
 Times are UTC. Money is in dollars and only applies to LLM upstreams.
 Type the admin token when asked, unless KEMAN_ADMIN_TOKEN is set.
-keman scan, keman exposure, keman canary, credential rotation,
-rekey, admin-token rotate, and alerts are on the CLI.
+keman scan, keman exposure, keman detection test, keman canary,
+credential rotation, rekey, admin-token rotate, and alerts are on the CLI.
 `
 
 func (m model) View() string {
@@ -491,6 +491,7 @@ func (m model) renderDetections() string {
 		case !m.loaded[screenDetections]:
 		default:
 			b.WriteString("No detections. Rules fire on abuse, not on normal traffic.\n")
+			b.WriteString("keman detection test replays the rules without a server.\n")
 		}
 		return b.String()
 	}

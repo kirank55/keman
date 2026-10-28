@@ -124,6 +124,10 @@ echo "$BODY" | grep -q '"hello"' || {
 }
 
 echo
+echo "Firing a detection through the proxy (five blocked requests)..."
+"$KEMAN" --config "$CFG" detection test --live --secret-file "$QS/virtual.key"
+
+echo
 echo "Quickstart succeeded."
 echo "  proxy:        http://127.0.0.1:$PROXY_PORT"
 echo "  admin:        http://127.0.0.1:$ADMIN_PORT"
@@ -134,6 +138,10 @@ echo "Official OpenAI SDKs need the /v1 suffix:"
 echo "  export KEMAN_KEY=\"\$(cat $QS/virtual.key)\""
 echo "  python3 examples/sdk_stream.py"
 echo "  node examples/sdk_stream.mjs"
+echo
+echo "The laptop key now has an allowlist detection in $QS/keman.db."
+echo "List it after the server is up:"
+echo "  KEMAN_ADMIN_TOKEN=\"\$(cat $QS/admin.token)\" $QS/keman --config $QS/keman.yaml detection list"
 echo
 echo "Open the terminal UI on this install (it starts the server and stops it on exit):"
 echo "  KEMAN_ADMIN_TOKEN=\"\$(cat $QS/admin.token)\" $QS/keman --config $QS/keman.yaml"

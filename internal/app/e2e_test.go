@@ -495,3 +495,36 @@ func (s *stack) proxy(t *testing.T, method, path, token string, hdr http.Header,
 	raw, _ := io.ReadAll(resp.Body)
 	return resp, string(raw)
 }
+
+func TestDetectionLiveProbe(t *testing.T) {
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"ok":true}`)
+	}))
+	defer up.Close()
+	env := startStack(t, up.URL, nil, nil, nil)
+	defer env.close()
+	cred := env.api(t, http.MethodPost, "/v1/credentials", map[string]any{
+		"upstream_id": env.upstream, "name": "primary", "auth_style": "header",
+		"header_template": "Authorization: Bearer {key}", "secret": "sk-live-probe",
+	})
+	key := env.api(t, http.MethodPost, "/v1/keys", map[string]any{"credential_id": cred["id"], "name": "laptop"})
+	token := key["token"].(string)
+	path := filepath.Join(t.TempDir(), "virtual.key")
+	if err := os.WriteFile(path, []byte(token), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	code := cli.Run(context.Background(), []string{
+		"--admin-url", env.proc.AdminURL(),
+		"--admin-token", env.token,
+		"detection", "test", "--live",
+		"--proxy", env.proc.ProxyURL(),
+		"--secret-file", path,
+	}, nil, nil, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("code %d\n%s\n%s", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "allowlist_violations medium") || !strings.Contains(stdout.String(), "count=5") {
+		t.Fatalf("stdout\n%s\nstderr\n%s", stdout.String(), stderr.String())
+	}
+}
