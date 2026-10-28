@@ -9,6 +9,9 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/keman ./cmd/keman
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/keman /keman
 USER nonroot:nonroot
+# init writes keman.yaml and master.key to the working directory, so it
+# must be the writable volume, not /.
+WORKDIR /home/nonroot
 ENV KEMAN_DATABASE=/home/nonroot/keman.db
 EXPOSE 8080
 ENTRYPOINT ["/keman"]

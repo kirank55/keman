@@ -18,7 +18,7 @@ Keman sits between your applications and an upstream API. Callers present a virt
 - A network peer that tries to spoof `X-Forwarded-For`.
 - An upstream that answers with a redirect.
 - An operator with the admin token.
-- Someone who can read the database file but not the master key.
+- Someone who can read the database file but not the master key. With the default layout, `master.key` sits next to the database. This actor exists only if you move the key elsewhere (see `SECURITY.md`).
 - Someone who can read the process memory.
 
 ## Boundaries
@@ -54,6 +54,7 @@ The upstream host, port, and TLS settings come from the credential's upstream re
 - An upstream that is itself compromised. Keman will send the real credential there, because that is the host you configured.
 - GeoIP without a database you supply. Country rules stay off, and a country allowlist refuses to save.
 - A lost master key. There is no recovery path.
+- Someone who can read the data directory, when `master.key` is left in it (the default). They can decrypt every credential.
 - A crash in the five seconds after a spend update and before the next flush. The cap can be overshot by that window. Open reservations are memory-only and are released on restart.
 - Detection when the event queue is full. The oldest events are dropped. Caps still apply, because they are not taken from the queue.
 
