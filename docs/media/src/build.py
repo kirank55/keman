@@ -7,9 +7,9 @@ JetBrainsMono-Regular.woff2, JetBrainsMono-Bold.woff2 and
 InterVariable.woff2. Each image is 1270x760 CSS pixels, the size Product Hunt
 recommends; render.mjs shoots them at 2x.
 
-The style is flat and light: a centered headline and one-line subtitle over
-a light background, and the app window centered below, cut off by the
-bottom edge.
+The style is flat black and white: the logo, headline and subtitle on the
+left of a white page, and a black terminal (or a white alert card) floating
+on the right, fully in frame.
 """
 import html
 import json
@@ -30,55 +30,77 @@ CSS = """
 @font-face { font-family: Mono; src: url('FONTS/JetBrainsMono-Bold.woff2'); font-weight: 700; }
 @font-face { font-family: Inter; src: url('FONTS/InterVariable.woff2'); font-weight: 100 900; }
 * { box-sizing: border-box; margin: 0; padding: 0; }
-:root { --fg: #1f2328; --bg: #ffffff; }
+:root { --fg: #e6e6e6; --bg: #000000; }
 html, body { width: WIDTHpx; height: HEIGHTpx; overflow: hidden; }
 body {
-  font-family: Inter, sans-serif; color: #111114; -webkit-font-smoothing: antialiased;
-  background: #f6f5f9; display: flex; flex-direction: column; align-items: center;
-  padding-top: 50px; text-align: center;
+  font-family: Inter, sans-serif; color: #0a0a0a; -webkit-font-smoothing: antialiased; background: #fff;
+  display: flex; align-items: center; gap: 40px; padding: 0 34px 0 58px;
 }
-h1 { font-size: 46px; line-height: 1.1; font-weight: 680; letter-spacing: -.012em; }
-.sub { margin-top: 14px; font-size: 20px; line-height: 1.4; color: #6c6b76; max-width: 1080px; }
-.stage { flex: 1; min-height: 0; width: 100%; margin-top: 40px; display: flex; flex-direction: column;
-  align-items: center; gap: 18px; text-align: left; }
-.win { flex: none; background: var(--bg); border: 1px solid #e4e3ea; border-radius: 12px; overflow: hidden;
-  box-shadow: 0 1px 2px rgba(17, 17, 40, .04), 0 18px 50px rgba(17, 17, 40, .09); }
-.bar { height: 34px; display: flex; align-items: center; gap: 8px; padding: 0 14px;
-  background: #fbfbfc; border-bottom: 1px solid #efeef3; }
-.bar i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+.copy { flex: none; width: 360px; }
+.copy.wide { width: 396px; }
+.logo { display: flex; align-items: center; gap: 11px; font-weight: 800; font-size: 20px; letter-spacing: .2em; }
+.logo svg { width: 36px; height: 36px; }
+h1 { margin-top: 30px; font-size: 40px; line-height: 1.08; font-weight: 780; letter-spacing: -.03em; }
+.sub { margin-top: 18px; font-size: 18px; line-height: 1.55; color: #525252; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 26px; }
+.chip { display: flex; align-items: center; gap: 7px; padding: 6px 9px; border-radius: 9px; border: 1px solid #e5e5e5;
+  font-size: 12px; font-weight: 600; white-space: nowrap; }
+.cta-row { display: flex; align-items: center; gap: 16px; margin-top: 28px; }
+.cta { padding: 14px 22px; border-radius: 10px; background: #0a0a0a; color: #fff; font-weight: 700; font-size: 16px; white-space: nowrap; }
+.meta { color: #737373; font-size: 13px; font-weight: 500; white-space: nowrap; }
+.stage { flex: 1; min-width: 0; height: 100%; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 20px; }
+.win { flex: none; background: var(--bg); border: 1px solid #262626; border-radius: 12px; overflow: hidden;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .20), 0 2px 8px rgba(0, 0, 0, .10); }
+.bar { height: 32px; display: flex; align-items: center; gap: 7px; padding: 0 13px;
+  background: #111; border-bottom: 1px solid #262626; }
+.bar i { width: 11px; height: 11px; border-radius: 50%; display: block; }
 .bar i:nth-child(1) { background: #ff5f57; } .bar i:nth-child(2) { background: #febc2e; } .bar i:nth-child(3) { background: #28c840; }
-.bar span { flex: 1; text-align: center; margin-right: 52px; font-size: 13px; color: #8b8a94; }
-pre { font-family: Mono, monospace; color: var(--fg); line-height: 1.34; padding: 16px 20px 18px; white-space: pre; }
+.bar span { flex: 1; text-align: center; margin-right: 46px; font-size: 12px; color: #8a8a8a; }
+pre { font-family: Mono, monospace; color: var(--fg); line-height: 1.24; padding: 14px 12px; white-space: pre;
+  font-variant-ligatures: none; }
 """
 
-# fit() shrinks each terminal's font until it fits its width (data-maxw, or
-# 1120px) and the height that stays visible (data-maxh, or down to the
-# bottom edge). Then the last box in the stage is stretched past the bottom
-# edge so the image cuts it off. render.mjs calls fit() after fonts load.
+# fit() shrinks each terminal's font until the window fits the stage's width
+# and its share of the height (data-maxh, or what the other boxes leave).
+# render.mjs calls fit() after fonts load.
 FIT_JS = """
 <script>
 window.fit = () => {
   const stage = document.querySelector('.stage');
-  for (const win of document.querySelectorAll('.win')) {
+  const gap = parseFloat(getComputedStyle(stage).rowGap) || 0;
+  for (const win of stage.querySelectorAll('.win')) {
     const pre = win.querySelector('pre');
-    const maxW = +(win.dataset.maxw || 1120);
-    let fs = +win.dataset.maxfont;
-    for (let i = 0; i < 8; i++) {
-      pre.style.fontSize = fs + 'px';
-      const top = win.getBoundingClientRect().top;
-      const maxH = +(win.dataset.maxh || (innerHeight - top - 26));
-      const r = Math.min(1, maxW / win.offsetWidth, maxH / win.offsetHeight);
-      if (r >= 0.999) break;
-      fs = Math.floor(fs * r * 100) / 100 - 0.05;
+    const others = [...stage.children].filter((c) => c !== win)
+      .reduce((h, c) => h + c.offsetHeight + gap, 0);
+    const maxW = stage.clientWidth;
+    const maxH = +(win.dataset.maxh || (innerHeight - 96 - others));
+    const fits = () => pre.scrollWidth + 2 <= maxW && win.offsetHeight <= maxH;
+    let lo = 6, hi = +win.dataset.maxfont;
+    pre.style.fontSize = hi + 'px';
+    if (!fits()) {
+      for (let i = 0; i < 14; i++) {
+        const mid = (lo + hi) / 2;
+        pre.style.fontSize = mid + 'px';
+        if (fits()) lo = mid; else hi = mid;
+      }
+      pre.style.fontSize = lo + 'px';
     }
-  }
-  const last = stage.lastElementChild;
-  if (last && !last.classList.contains('nobleed')) {
-    last.style.minHeight = (innerHeight - last.getBoundingClientRect().top + 40) + 'px';
   }
 };
 </script>
 """
+
+CHIP_ICONS = {
+    "globe": "<circle cx='12' cy='12' r='9'/><path d='M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18'/>",
+    "layers": "<path d='M12 2 3 7l9 5 9-5zM3 17l9 5 9-5M3 12l9 5 9-5'/>",
+    "clock": "<circle cx='12' cy='12' r='9'/><path d='M12 7v5l3 2'/>",
+}
+
+
+def chip(icon, label):
+    return (f"<div class='chip'><svg width='15' height='15' viewBox='0 0 24 24' fill='none' stroke='currentColor' "
+            f"stroke-width='2.2'>{CHIP_ICONS[icon]}</svg>{html.escape(label)}</div>")
 
 
 def page(body, extra_css=""):
@@ -106,9 +128,9 @@ def load(shots, name):
     return "\n".join(out)
 
 
-def terminal(shots, name, title, max_w=None, max_font=17.0, max_h=None):
+def terminal(shots, name, title, max_font=15.0, max_h=None):
     """A terminal window holding one capture."""
-    limit = (f" data-maxw='{max_w}'" if max_w else "") + (f" data-maxh='{max_h}'" if max_h else "")
+    limit = f" data-maxh='{max_h}'" if max_h else ""
     return (
         f"<div class='win' data-maxfont='{max_font}'{limit}><div class='bar'><i></i><i></i><i></i>"
         f"<span>{html.escape(title)}</span></div>"
@@ -117,17 +139,17 @@ def terminal(shots, name, title, max_w=None, max_font=17.0, max_h=None):
 
 
 SLACK_CSS = """
-.slack { width: 1060px; background: #fff; border: 1px solid #e4e3ea; border-radius: 12px; overflow: hidden;
-  box-shadow: 0 1px 2px rgba(17,17,40,.04), 0 18px 50px rgba(17,17,40,.09); font-family: Inter, sans-serif; }
-.slack .chan { padding: 13px 20px; border-bottom: 1px solid #efeef3; color: #1d1c1d; font-weight: 700; font-size: 15px; }
-.slack .chan small { color: #8b8a94; font-weight: 400; margin-left: 6px; }
-.msg { display: flex; gap: 12px; padding: 16px 20px 20px; }
-.msg svg { width: 38px; height: 38px; flex: none; border-radius: 8px; }
-.who { font-size: 15px; font-weight: 800; color: #1d1c1d; }
-.who b { font-size: 10px; font-weight: 700; color: #616061; background: #ececee; border-radius: 3px;
+.slack { width: 100%; background: #fff; border: 1px solid #e5e5e5; border-radius: 12px; overflow: hidden;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .12), 0 2px 8px rgba(0, 0, 0, .06); font-family: Inter, sans-serif; }
+.slack .chan { padding: 12px 18px; border-bottom: 1px solid #eee; color: #0a0a0a; font-weight: 700; font-size: 14px; }
+.slack .chan small { color: #8a8a8a; font-weight: 400; margin-left: 6px; }
+.msg { display: flex; gap: 12px; padding: 14px 18px 18px; }
+.msg svg { width: 36px; height: 36px; flex: none; border-radius: 8px; }
+.who { font-size: 14px; font-weight: 800; color: #0a0a0a; }
+.who b { font-size: 10px; font-weight: 700; color: #525252; background: #eee; border-radius: 3px;
   padding: 1px 4px; margin-left: 5px; vertical-align: 2px; }
-.who small { font-weight: 400; color: #8b8a94; font-size: 12px; margin-left: 6px; }
-.text { margin-top: 4px; font-size: 15px; line-height: 1.55; color: #1d1c1d; white-space: pre-wrap; word-break: break-word; }
+.who small { font-weight: 400; color: #8a8a8a; font-size: 12px; margin-left: 6px; }
+.text { margin-top: 4px; font-size: 13.5px; line-height: 1.5; color: #0a0a0a; white-space: pre-wrap; word-break: break-word; }
 """
 
 
@@ -151,43 +173,45 @@ def find_alert(shots, rule, key=None):
 
 
 DIAGRAM_CSS = """
-.stage { justify-content: center; padding-bottom: 60px; }
-.flow { display: grid; grid-template-columns: 240px 120px 330px 120px 240px; align-items: center; }
-.node { background: #fff; border: 1px solid #e4e3ea; border-radius: 14px; padding: 18px 20px;
-  box-shadow: 0 1px 2px rgba(17,17,40,.04), 0 14px 40px rgba(17,17,40,.07); }
-.node h3 { font-size: 18px; font-weight: 700; margin-bottom: 8px; }
-.node p { font-size: 14px; line-height: 1.5; color: #6c6b76; }
-.node code { font-family: Mono, monospace; font-size: 13px; color: #1f2328; background: #f2f1f6; border-radius: 4px; padding: 1px 5px; }
-.node.keman { border: 1.5px solid #111114; padding: 22px; }
-.node.keman h3 { display: flex; align-items: center; gap: 10px; font-size: 22px; }
-.node.keman svg { width: 32px; height: 32px; border-radius: 7px; }
-.node.keman ul { list-style: none; margin-top: 8px; }
-.node.keman li { font-size: 14px; line-height: 1.45; color: #3f3e48; padding: 7px 0; border-top: 1px solid #efeef3; }
+.flow { width: 100%; max-width: 680px; display: flex; flex-direction: column; align-items: stretch; }
+.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.node { background: #fff; border: 1px solid #e5e5e5; border-radius: 12px; padding: 16px 18px; }
+.node h3 { font-size: 17px; font-weight: 700; margin-bottom: 6px; }
+.node p { font-size: 14px; line-height: 1.5; color: #525252; }
+.node code { font-family: Mono, monospace; font-size: 13px; color: #0a0a0a; background: #f5f5f5; border-radius: 4px; padding: 1px 5px; }
+.node.keman { background: #000; border-color: #000; color: #fff; padding: 20px 22px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .20), 0 2px 8px rgba(0, 0, 0, .10); }
+.node.keman h3 { display: flex; align-items: center; gap: 10px; font-size: 20px; }
+.node.keman h3 svg { width: 30px; height: 30px; border-radius: 7px; outline: 1px solid #333; }
+.node.keman ul { list-style: none; margin-top: 6px; }
+.node.keman li { font-size: 14px; line-height: 1.45; color: #a3a3a3; padding: 7px 0; border-top: 1px solid #262626; }
 .node.keman li:first-child { border-top: 0; }
-.node.keman li b { color: #111114; font-weight: 650; }
-.node.thief { border-color: #f3c4c0; }
-.node.thief h3 { color: #c7372f; }
-.arrow { position: relative; height: 1.5px; margin: 0 12px; background: #8b8a94; }
-.arrow::after { content: ''; position: absolute; right: -1px; top: -5px; border: 6px solid transparent;
-  border-left: 9px solid #8b8a94; border-right: 0; }
-.arrow span { position: absolute; left: 50%; transform: translateX(-50%); bottom: 9px; white-space: nowrap;
-  font-family: Mono, monospace; font-size: 12.5px; color: #3f3e48; }
-.arrow.bad { background: #d9534f; }
-.arrow.bad::after { border-left-color: #d9534f; }
-.ups p { font-size: 14.5px; color: #3f3e48; padding: 3px 0; }
-.stack { display: flex; flex-direction: column; gap: 64px; }
-.blocked { margin-top: 12px; font-size: 13.5px; font-weight: 600; color: #c7372f; }
+.node.keman li b { color: #fff; font-weight: 650; }
+.node.thief h3 { color: #dc2626; }
+.node .blocked { margin-top: 10px; font-size: 13.5px; font-weight: 600; color: #f87171; }
+.down { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; height: 56px; }
+.down.one { grid-template-columns: 1fr; }
+.arrow { position: relative; justify-self: center; width: 1.5px; height: 100%; background: #0a0a0a; }
+.arrow::after { content: ''; position: absolute; left: -5.25px; bottom: -1px; border: 6px solid transparent;
+  border-top: 9px solid #0a0a0a; border-bottom: 0; }
+.arrow span { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); white-space: nowrap;
+  font-family: Mono, monospace; font-size: 12.5px; color: #525252; }
+.arrow.bad { background: #dc2626; }
+.arrow.bad::after { border-top-color: #dc2626; }
+.ups { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+.ups h3 { margin: 0; }
+.ups p { color: #0a0a0a; }
 """
 
 
 def diagram():
     return f"""
-<div class='flow nobleed'>
-  <div class='stack'>
+<div class='flow'>
+  <div class='pair'>
     <div class='node'><h3>Your app</h3><p>Holds a virtual key</p><p style='margin-top:6px'><code>kmn_x7Kq…</code></p></div>
     <div class='node thief'><h3>A leaked copy</h3><p>Used from a network or country you never allowed</p></div>
   </div>
-  <div class='stack'>
+  <div class='down'>
     <div class='arrow'><span>kmn_ key</span></div>
     <div class='arrow bad'><span>kmn_ key</span></div>
   </div>
@@ -201,8 +225,8 @@ def diagram():
     </ul>
     <p class='blocked'>✕ Leaked copy refused, alert sent</p>
   </div>
-  <div class='arrow'><span>real key</span></div>
-  <div class='node ups'><h3>Provider</h3><p>OpenAI</p><p>Anthropic</p><p>OpenRouter</p><p>Stripe, GitHub</p><p>Any header-auth API</p></div>
+  <div class='down one'><div class='arrow'><span>real key</span></div></div>
+  <div class='node ups'><h3>Provider</h3><p>OpenAI · Anthropic · OpenRouter · Stripe · GitHub · any header-auth API</p></div>
 </div>"""
 
 
@@ -212,15 +236,23 @@ def build(shots, fonts, out):
             raise SystemExit(f"missing font {os.path.join(fonts, f)}")
     os.makedirs(out, exist_ok=True)
 
-    def shot(name, title, sub, stage, css=""):
-        body = f"<h1>{title}</h1><p class='sub'>{sub}</p><div class='stage'>{stage}</div>"
+    def shot(name, title, sub, stage, css="", extra=""):
+        wide = " wide" if extra else ""
+        body = (f"<div class='copy{wide}'><div class='logo'>{LOGO}KEMAN</div><h1>{title}</h1>"
+                f"<p class='sub'>{sub}</p>{extra}</div><div class='stage'>{stage}</div>")
         doc = page(body, css).replace("FONTS/", "file://" + os.path.abspath(fonts) + "/")
         with open(os.path.join(out, name + ".html"), "w", encoding="utf-8") as f:
             f.write(doc)
 
-    shot("01-hero", "Your apps never hold the real API key",
-         "Keman keeps your provider keys and hands apps virtual ones you can lock, expire, watch, and kill.",
-         terminal(shots, "keys", "keman"))
+    hero_extra = (
+        "<div class='chips'>" + chip("globe", "IP & country locks") + chip("layers", "Canary keys")
+        + chip("clock", "Auto-expiry") + "</div>"
+        "<div class='cta-row'><div class='cta'>Get Keman on GitHub →</div>"
+        "<div class='meta'>One Go binary · Apache-2.0</div></div>"
+    )
+    shot("01-hero", "OpenSource protection from leaked API keys",
+         "Apps get virtual keys. The real key never leaves Keman, so a leaked copy is locked, watched, and killed in one command.",
+         terminal(shots, "keys", "keman"), extra=hero_extra)
     shot("02-how-it-works", "A leaked key only works where you allow it",
          "Apps send a virtual key. Keman checks it, then forwards the request with the real key.",
          diagram(), DIAGRAM_CSS)
@@ -235,11 +267,11 @@ def build(shots, fonts, out):
          terminal(shots, "detections", "keman · detections"))
     shot("06-contain", "Kill a leaked key in one command",
          "The app gets a replacement with the same policy. The real provider key stays untouched.",
-         terminal(shots, "rotate", "acme-api", max_font=16))
+         terminal(shots, "rotate", "acme-api"))
     shot("07-canary", "Plant a decoy, catch the thief",
          "Canary keys look real, never reach the provider, and raise a critical alert on first use.",
-         terminal(shots, "canary", "acme-api", max_h=225) + slack(find_alert(shots, "canary_used"), when="4:32 PM"),
-         SLACK_CSS + ".slack { width: 1000px; }")
+         terminal(shots, "canary", "acme-api", max_h=200) + slack(find_alert(shots, "canary_used"), when="4:32 PM"),
+         SLACK_CSS)
     shot("08-scan", "Find the keys you already leaked",
          "keman scan checks files and every commit, offline, and exits 3 so it can gate CI.",
          terminal(shots, "scan", "acme-api"))
