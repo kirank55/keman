@@ -24,8 +24,8 @@ Assets:
 
 These block the launch. Every install path in the README, the website and the posts depends on them.
 
-- [ ] **Make the repository public.** It is private now, so `install.sh`, `go install`, raw.githubusercontent.com links, the badges and the release downloads all return 404 to everyone else.
-- [ ] Set the repo's About box: description `Open-source protection from leaked API keys`, the website URL, and topics `api-keys`, `security`, `proxy`, `secrets`, `llm`, `openai`, `anthropic`, `self-hosted`, `golang`, `devtools`.
+- [x] **Make the repository public.** While it was private, `install.sh`, `go install`, raw.githubusercontent.com links, the badges and the release downloads all returned 404 to everyone else.
+- [x] Set the repo's About box: description `Open-source protection from leaked API keys`, the website URL, and topics `api-keys`, `security`, `proxy`, `secrets`, `llm`, `openai`, `anthropic`, `self-hosted`, `golang`, `devtools`.
 - [ ] Upload `website/og.png` as the repo's social preview (Settings → General → Social preview).
 - [ ] Tag the release and push it: `git tag v0.1.0-beta && git push origin v0.1.0-beta`. Watch the `release` workflow.
 - [ ] Check the release has five binaries, each with `.sha256`, `.spdx.json` and `.bundle`, plus `checksums.txt` and `install.sh`. It should be marked as a prerelease.
@@ -37,7 +37,7 @@ These block the launch. Every install path in the README, the website and the po
   - [ ] the Windows `.exe` from the release page
   - [ ] `cosign verify-blob` as in [SECURITY.md](../../SECURITY.md#verifying-a-release)
 - [ ] From a fresh clone, run `./scripts/demo.sh` and open the UI with the command it prints.
-- [ ] Publish `website/`, set the absolute `og:image` URL (see [`website/README.md`](../../website/README.md)), and check the link preview in Slack or with an Open Graph preview tool.
+- [x] Publish `website/` (https://keman.pages.dev), set the absolute `og:image` URL (see [`website/README.md`](../../website/README.md)), and check the link preview in Slack or with an Open Graph preview tool.
 - [ ] Create the Product Hunt post from [`product-hunt.md`](product-hunt.md) and schedule it. Upload the thumbnail and gallery in order, and add the website and GitHub links.
 - [ ] Tell the people who already know about Keman which day it launches, and ask them for honest feedback in the comments.
 
