@@ -562,7 +562,7 @@ func history(args []string) error {
 		var last model.Baseline
 		for _, ev := range events {
 			ev.Country, ev.ASN = geo.Lookup(net.ParseIP(ev.IP))
-			if cost, ok := prices.Cost(ev.Model, ev.TokensIn, ev.TokensOut, 0, 0, false); ok && ev.Model != "" {
+			if cost, ok := prices.Cost("", ev.Model, ev.TokensIn, ev.TokensOut, 0, 0, false); ok && ev.Model != "" {
 				ev.CostMicro = &cost
 				if capped[k.ID] {
 					spend[[2]string{k.ID, state.DayPeriod(ev.Time)}] += cost

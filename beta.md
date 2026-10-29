@@ -23,6 +23,7 @@ The beta supports HTTP only. Other protocols, such as Redis and MongoDB, may com
 
 - Single binary and Docker image. Single instance.
 - HTTP reverse proxy, HTTP/1.1 and HTTP/2, for APIs that authenticate with a header or HTTP Basic.
+- Presets for known platforms (OpenAI, Anthropic, OpenRouter, Gemini, Groq, Mistral, DeepSeek, xAI, Together AI, Fireworks AI, Cerebras, Stripe, GitHub, Slack, Twilio, SendGrid, Resend, Postmark, Cloudflare, Linear, Notion). A preset fills in an upstream on one of the profiles below, and every field can be overridden.
 - Provider profiles:
   - OpenAI-compatible: full support, including token usage and cost.
   - Anthropic: full support, including token usage and cost.
@@ -69,7 +70,7 @@ The beta supports HTTP only. Other protocols, such as Redis and MongoDB, may com
 
 | Entity | Purpose |
 | --- | --- |
-| `upstream` | Target service: protocol (`http` only in beta), profile (`openai`, `anthropic`, `generic`), host, port, TLS settings. |
+| `upstream` | Target service: protocol (`http` only in beta), profile (`openai`, `anthropic`, `generic`), optional preset, host, port, TLS settings. |
 | `credential` | The real secret for an upstream, encrypted, with a `key_version`. Auth style: header template or HTTP Basic. Write-only. |
 | `virtual_key` | What apps use. Id plus a hashed secret. Kind: `standard` or `canary`. Status: `active`, `disabled` or `revoked`. Expiry, defaulting to `default_key_ttl` for standard keys. |
 | `policy` | Limits and allowlists for a virtual key. Mode: `alert_only` (default), `dry_run` or `auto_disable`. |
@@ -88,13 +89,15 @@ All keys and policies are loaded into memory at startup. Every admin write updat
 - Header template, such as `Authorization: Bearer {key}` or `x-api-key: {key}`.
 - HTTP Basic, with the real key as the password and a fixed or empty username, or as `user:pass`.
 
-The proxy strips the client's auth header and replaces it with the real one.
+When a credential sets neither, its auth comes from the upstream's preset, or from the profile: `x-api-key` for Anthropic, a Bearer token otherwise.
+
+The client may present the virtual key as a Bearer token, GitHub's `token` scheme, `x-api-key`, either half of HTTP Basic, or any header whose value starts with `kmn_`. The proxy strips that header and adds the real one.
 
 **Path allowlists**
 
 - Entries are a method plus a path pattern, such as `POST /v1/charges` or `GET /v1/customers/*`. `*` matches one segment and `**` matches the rest of the path.
 - The matching entry becomes the event's operation, so baselines see a bounded set of operations.
-- Generic HTTP needs an allowlist, and anything not on it is denied.
+- Generic HTTP needs an allowlist, and anything not on it is denied. Every generic preset ships one.
 - OpenAI and Anthropic ship with built-in allowlists for their documented endpoints. A policy can narrow them.
 
 **LLM profiles**
@@ -105,7 +108,7 @@ The proxy strips the client's auth header and replaces it with the real one.
 
 ## Spend and cost
 
-- **Prices:** an embedded `prices.json` versioned in the repo, overridable by a file path in the config. Each model has input, output, cached input and cache write prices per million tokens.
+- **Prices:** an embedded `prices.json` versioned in the repo, overridable by a file path in the config. Each model has input, output, cached input and cache write prices per million tokens. Prices under a preset win over the global ones for upstreams made from that preset.
 - **Reservation:** before forwarding, the proxy reserves request bytes / 4 × the input price, plus `max_tokens` × the output price. If `max_tokens` is unset, it reserves `default_reservation_usd` (default $0.10).
 - **Cap check:** a request is blocked if committed spend plus open reservations plus the new reservation would exceed the cap.
 - **Reconcile:** when the response ends, actual cost replaces the reservation. If usage is missing, the reservation is charged and the event is marked as estimated.

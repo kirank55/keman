@@ -11,6 +11,7 @@ import (
 	"github.com/kirank55/keman/internal/expiry"
 	kmodel "github.com/kirank55/keman/internal/model"
 	"github.com/kirank55/keman/internal/money"
+	"github.com/kirank55/keman/internal/preset"
 )
 
 type tickMsg struct{}
@@ -75,39 +76,75 @@ type adminReady struct {
 
 type focusAdminMsg struct{}
 
-const openRouterPaths = "POST /api/v1/chat/completions, GET /api/v1/models, GET /api/v1/models/*"
-
-var upstreamProfiles = []string{"openai", "anthropic", "generic"}
-
-// upstreamPreset is the suggested form for a profile. OpenRouter is the
-// OpenAI-compatible suggestion because it needs a path list.
-type upstreamPreset struct {
-	name, host, port, paths string
-	tls                     bool
+// upstreamChoice is one value of the platform field: a preset, or a custom
+// upstream on one profile. An empty paths field means the preset's list.
+type upstreamChoice struct {
+	label, preset, profile string
+	name, host, port       string
+	tls                    bool
+	paths                  int
 }
 
-var upstreamPresets = map[string]upstreamPreset{
-	"openai":    {name: "openrouter", host: "openrouter.ai", port: "443", paths: openRouterPaths, tls: true},
-	"anthropic": {name: "anthropic", host: "api.anthropic.com", port: "443", tls: true},
-	"generic":   {port: "443", tls: true},
-}
+// upstreamChoices puts OpenRouter first: it is the suggestion for a new
+// install. Custom entries come last.
+var upstreamChoices = func() []upstreamChoice {
+	var out []upstreamChoice
+	add := func(p preset.Preset) {
+		out = append(out, upstreamChoice{
+			label: p.Title, preset: p.Name, profile: p.Profile,
+			name: p.Name, host: p.Host, port: strconv.Itoa(p.Port), tls: p.TLS, paths: len(p.Paths),
+		})
+	}
+	first, _ := preset.Get("openrouter")
+	add(first)
+	for _, p := range preset.All() {
+		if p.Name != first.Name {
+			add(p)
+		}
+	}
+	for _, prof := range []string{"openai", "anthropic", "generic"} {
+		out = append(out, upstreamChoice{label: "custom " + prof, profile: prof, port: "443", tls: true})
+	}
+	return out
+}()
 
-func (m *model) applyPreset(p upstreamPreset) {
-	m.upName.SetValue(p.name)
-	m.upHost.SetValue(p.host)
-	m.upPort.SetValue(p.port)
-	m.upPaths.SetValue(p.paths)
-	m.upTLS = p.tls
+func (m *model) applyPreset(c upstreamChoice) {
+	m.upName.SetValue(c.name)
+	m.upHost.SetValue(c.host)
+	m.upPort.SetValue(c.port)
+	m.upPaths.SetValue("")
+	switch {
+	case c.paths > 0:
+		m.upPaths.Placeholder = fmt.Sprintf("the %s list (%d paths)", c.label, c.paths)
+	case c.profile == "generic":
+		m.upPaths.Placeholder = "POST /path"
+	default:
+		m.upPaths.Placeholder = "the built-in " + c.profile + " list"
+	}
+	m.upTLS = c.tls
 	m.upName.CursorEnd()
 	m.upHost.CursorEnd()
 	m.upPort.CursorEnd()
-	m.upPaths.CursorEnd()
 }
 
-// upstreamIs reports whether the form still holds preset p, unedited.
-func (m model) upstreamIs(p upstreamPreset) bool {
-	return m.upName.Value() == p.name && m.upHost.Value() == p.host &&
-		m.upPort.Value() == p.port && m.upPaths.Value() == p.paths && m.upTLS == p.tls
+// upstreamIs reports whether the form still holds choice c, unedited.
+func (m model) upstreamIs(c upstreamChoice) bool {
+	return m.upName.Value() == c.name && m.upHost.Value() == c.host &&
+		m.upPort.Value() == c.port && m.upPaths.Value() == "" && m.upTLS == c.tls
+}
+
+// credentialEnv is the variable a credential for up is usually read from.
+func credentialEnv(up Upstream) string {
+	if p, ok := preset.Get(up.Preset); ok {
+		return p.Env
+	}
+	switch up.Profile {
+	case "anthropic":
+		return "ANTHROPIC_API_KEY"
+	case "openai":
+		return "OPENAI_API_KEY"
+	}
+	return "API_KEY"
 }
 
 func (m model) Init() tea.Cmd {
@@ -938,7 +975,7 @@ func (m model) openUpstream() (model, tea.Cmd) {
 	m.overlay = overlayUpstream
 	m.upField = 0
 	m.upProfile = 0
-	m.applyPreset(upstreamPresets[upstreamProfiles[0]])
+	m.applyPreset(upstreamChoices[0])
 	m.errMsg = ""
 	m.note = ""
 	return m.focusUpstream()
@@ -951,7 +988,7 @@ func (m model) openCredential() (model, tea.Cmd) {
 	if m.credUp < 0 || m.credUp >= len(m.ups) {
 		m.credUp = len(m.ups) - 1
 	}
-	envName := "OPENROUTER_API_KEY"
+	envName := credentialEnv(m.ups[m.credUp])
 	m.overlay = overlayCredential
 	m.credField = 0
 	m.credName.SetValue("primary")
@@ -975,13 +1012,13 @@ func (m model) submitUpstream() (model, tea.Cmd) {
 		m.errMsg = "name, host, and a port from 1 to 65535 are required"
 		return m, nil
 	}
-	profile := upstreamProfiles[m.upProfile]
+	choice := upstreamChoices[m.upProfile]
 	paths := splitPaths(m.upPaths.Value())
-	if profile == "generic" && len(paths) == 0 {
+	if choice.preset == "" && choice.profile == "generic" && len(paths) == 0 {
 		m.errMsg = "a generic upstream needs at least one path"
 		return m, nil
 	}
-	draft := UpstreamDraft{Name: name, Profile: profile, Host: host, Port: port, TLS: m.upTLS, Paths: paths}
+	draft := UpstreamDraft{Name: name, Profile: choice.profile, Preset: choice.preset, Host: host, Port: port, TLS: m.upTLS, Paths: paths}
 	api := m.api
 	ctx := m.ctx
 	m.errMsg = ""
@@ -1049,15 +1086,15 @@ func splitPaths(s string) []string {
 
 func (m *model) cycleUpstream(next bool) {
 	if m.upField == 1 {
-		prev := upstreamPresets[upstreamProfiles[m.upProfile]]
-		n := len(upstreamProfiles)
+		prev := upstreamChoices[m.upProfile]
+		n := len(upstreamChoices)
 		if next {
 			m.upProfile = (m.upProfile + 1) % n
 		} else {
 			m.upProfile = (m.upProfile + n - 1) % n
 		}
 		if m.upstreamIs(prev) {
-			m.applyPreset(upstreamPresets[upstreamProfiles[m.upProfile]])
+			m.applyPreset(upstreamChoices[m.upProfile])
 		}
 	}
 	if m.upField == 4 {
@@ -1068,10 +1105,14 @@ func (m *model) cycleUpstream(next bool) {
 func (m *model) cycleCredential(next bool) {
 	if m.credField == 1 && len(m.ups) > 0 {
 		n := len(m.ups)
+		prevEnv := credentialEnv(m.ups[m.credUp])
 		if next {
 			m.credUp = (m.credUp + 1) % n
 		} else {
 			m.credUp = (m.credUp + n - 1) % n
+		}
+		if m.credEnv.Value() == prevEnv {
+			m.credEnv.SetValue(credentialEnv(m.ups[m.credUp]))
 		}
 	}
 	if m.credField == 2 {

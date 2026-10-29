@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS upstreams (
   server_name TEXT NOT NULL DEFAULT '',
   path_allowlist TEXT NOT NULL DEFAULT '',
   inject_usage INTEGER NOT NULL DEFAULT 1,
+  preset TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS credentials (
@@ -172,7 +173,51 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
+	if err := migrate(db); err != nil {
+		db.Close()
+		return nil, err
+	}
 	return &Store{db: db}, nil
+}
+
+// columns added after the beta schema shipped. CREATE TABLE IF NOT EXISTS
+// leaves an existing table alone, so older databases get them here.
+var columns = []struct{ table, name, def string }{
+	{"upstreams", "preset", "TEXT NOT NULL DEFAULT ''"},
+}
+
+func migrate(db *sql.DB) error {
+	for _, c := range columns {
+		has, err := hasColumn(db, c.table, c.name)
+		if err != nil {
+			return err
+		}
+		if has {
+			continue
+		}
+		if _, err := db.Exec(`ALTER TABLE ` + c.table + ` ADD COLUMN ` + c.name + ` ` + c.def); err != nil {
+			return fmt.Errorf("add column %s.%s: %w", c.table, c.name, err)
+		}
+	}
+	return nil
+}
+
+func hasColumn(db *sql.DB, table, column string) (bool, error) {
+	rows, err := db.Query(`SELECT name FROM pragma_table_info(?)`, table)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return false, err
+		}
+		if name == column {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
 }
 
 func (s *Store) Close() error { return s.db.Close() }
@@ -221,13 +266,13 @@ func (s *Store) UpdateAdminHash(ctx context.Context, hash []byte) error {
 }
 
 func (s *Store) InsertUpstream(ctx context.Context, u model.Upstream) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO upstreams (id, name, protocol, profile, host, port, tls, insecure_skip_verify, server_name, path_allowlist, inject_usage, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		u.ID, u.Name, u.Protocol, u.Profile, u.Host, u.Port, bit(u.TLS), bit(u.InsecureSkipVerify), u.ServerName, strings.Join(u.PathAllowlist, "\n"), bit(u.InjectUsage), fmtTime(u.CreatedAt))
+	_, err := s.db.ExecContext(ctx, `INSERT INTO upstreams (id, name, protocol, profile, preset, host, port, tls, insecure_skip_verify, server_name, path_allowlist, inject_usage, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		u.ID, u.Name, u.Protocol, u.Profile, u.Preset, u.Host, u.Port, bit(u.TLS), bit(u.InsecureSkipVerify), u.ServerName, strings.Join(u.PathAllowlist, "\n"), bit(u.InjectUsage), fmtTime(u.CreatedAt))
 	return err
 }
 
 func (s *Store) ListUpstreams(ctx context.Context) ([]model.Upstream, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, name, protocol, profile, host, port, tls, insecure_skip_verify, server_name, path_allowlist, inject_usage, created_at FROM upstreams ORDER BY name`)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, name, protocol, profile, preset, host, port, tls, insecure_skip_verify, server_name, path_allowlist, inject_usage, created_at FROM upstreams ORDER BY name`)
 	if err != nil {
 		return nil, err
 	}
@@ -237,7 +282,7 @@ func (s *Store) ListUpstreams(ctx context.Context) ([]model.Upstream, error) {
 		var u model.Upstream
 		var tls, insecure, inject int
 		var paths, created string
-		if err := rows.Scan(&u.ID, &u.Name, &u.Protocol, &u.Profile, &u.Host, &u.Port, &tls, &insecure, &u.ServerName, &paths, &inject, &created); err != nil {
+		if err := rows.Scan(&u.ID, &u.Name, &u.Protocol, &u.Profile, &u.Preset, &u.Host, &u.Port, &tls, &insecure, &u.ServerName, &paths, &inject, &created); err != nil {
 			return nil, err
 		}
 		u.TLS = tls == 1

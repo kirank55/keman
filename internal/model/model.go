@@ -26,6 +26,7 @@ type Upstream struct {
 	Name               string    `json:"name"`
 	Protocol           string    `json:"protocol"`
 	Profile            string    `json:"profile"`
+	Preset             string    `json:"preset,omitempty"`
 	Host               string    `json:"host"`
 	Port               int       `json:"port"`
 	TLS                bool      `json:"tls"`

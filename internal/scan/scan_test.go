@@ -20,6 +20,11 @@ func TestLineFindsEachProvider(t *testing.T) {
 		"openai":            fake("sk-"+"proj-", 60),
 		"stripe":            fake("sk_"+"live_", 30),
 		"github":            fake("gh"+"p_", 36),
+		"groq":              fake("gs"+"k_", 52),
+		"xai":               fake("xa"+"i-", 80),
+		"sendgrid":          "S" + "G." + fake("", 22) + "." + fake("", 43),
+		"linear":            fake("lin_"+"api_", 40),
+		"google_api":        "AI" + "za" + fake("", 35),
 		"aws_access_key":    "AK" + "IA" + "ABCDEFGHIJKLMNOP",
 		"keman_virtual_key": "kmn_" + "abcd1234_" + strings.Repeat("Z", 40),
 	}
@@ -35,6 +40,16 @@ func TestLineFindsEachProvider(t *testing.T) {
 	vk := Line("kmn_" + "abcd1234_" + strings.Repeat("Z", 40))
 	if vk[0].KeyID != "abcd1234" {
 		t.Fatalf("virtual key id %+v", vk[0])
+	}
+}
+
+func TestRulesTakeHostAndEnvFromPreset(t *testing.T) {
+	got := Line(fake("gs"+"k_", 52))
+	if len(got) != 1 || got[0].Preset != "groq" || got[0].Profile != "openai" || got[0].Host != "api.groq.com" || got[0].Env != "GROQ_API_KEY" {
+		t.Fatalf("%+v", got)
+	}
+	if aws := Line("AK" + "IA" + "ABCDEFGHIJKLMNOP"); aws[0].Preset != "" || aws[0].Profile != "" {
+		t.Fatalf("AWS keys cannot be fronted: %+v", aws[0])
 	}
 }
 

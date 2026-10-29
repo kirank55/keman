@@ -11,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	kmodel "github.com/kirank55/keman/internal/model"
+	"github.com/kirank55/keman/internal/preset"
 	"github.com/muesli/termenv"
 )
 
@@ -86,7 +87,7 @@ func (f *fakeAPI) RotateKey(_ context.Context, id string, grace time.Duration) (
 }
 func (f *fakeAPI) AddUpstream(_ context.Context, d UpstreamDraft) (Upstream, error) {
 	f.upDrafts = append(f.upDrafts, d)
-	return Upstream{ID: "u-new", Name: d.Name, Profile: d.Profile, Host: d.Host, Port: d.Port, TLS: d.TLS}, nil
+	return Upstream{ID: "u-new", Name: d.Name, Profile: d.Profile, Preset: d.Preset, Host: d.Host, Port: d.Port, TLS: d.TLS}, nil
 }
 func (f *fakeAPI) AddCredential(_ context.Context, d CredentialDraft) (Credential, error) {
 	f.credDrafts = append(f.credDrafts, d)
@@ -587,11 +588,11 @@ func TestSetupFromEmptyKeys(t *testing.T) {
 		t.Fatal(f.upDrafts)
 	}
 	d := f.upDrafts[0]
-	if d.Name != "openrouter" || d.Profile != "openai" || d.Host != "openrouter.ai" || d.Port != 443 || !d.TLS {
+	if d.Name != "openrouter" || d.Profile != "openai" || d.Preset != "openrouter" || d.Host != "openrouter.ai" || d.Port != 443 || !d.TLS {
 		t.Fatalf("%+v", d)
 	}
-	if len(d.Paths) != 3 || d.Paths[0] != "POST /api/v1/chat/completions" || d.Paths[2] != "GET /api/v1/models/*" {
-		t.Fatalf("%+v", d.Paths)
+	if len(d.Paths) != 0 {
+		t.Fatalf("an empty paths field leaves the preset's list to the server: %+v", d.Paths)
 	}
 	if m.overlay != overlayCredential {
 		t.Fatalf("overlay %d", m.overlay)
@@ -987,14 +988,51 @@ func TestEnterOnDetectionOpensItsKey(t *testing.T) {
 func TestProfileSwapsUntouchedPreset(t *testing.T) {
 	m := sample(&fakeAPI{})
 	m, _ = press(m, "a", "down", "right")
-	if m.upHost.Value() != "api.anthropic.com" {
-		t.Fatalf("host %q", m.upHost.Value())
+	next := upstreamChoices[1]
+	if m.upHost.Value() != next.host || m.upName.Value() != next.name {
+		t.Fatalf("host %q name %q, want %+v", m.upHost.Value(), m.upName.Value(), next)
 	}
 	m, _ = press(m, "down")
 	m = typeText(m, "x")
 	m, _ = press(m, "up", "right")
-	if m.upHost.Value() != "api.anthropic.comx" {
+	if m.upHost.Value() != next.host+"x" {
 		t.Fatalf("an edited host was replaced: %q", m.upHost.Value())
+	}
+}
+
+func TestPlatformListsEveryPresetThenCustom(t *testing.T) {
+	m := sample(&fakeAPI{})
+	m, _ = press(m, "a", "down")
+	seen := map[string]bool{}
+	for range upstreamChoices {
+		c := upstreamChoices[m.upProfile]
+		if !strings.Contains(m.View(), c.label) {
+			t.Fatalf("platform %q not shown:\n%s", c.label, m.View())
+		}
+		seen[c.preset] = true
+		m, _ = press(m, "right")
+	}
+	for _, name := range preset.Names() {
+		if !seen[name] {
+			t.Errorf("preset %s is not offered", name)
+		}
+	}
+	last := upstreamChoices[len(upstreamChoices)-1]
+	if last.preset != "" || last.profile != "generic" {
+		t.Fatalf("custom generic should be last: %+v", last)
+	}
+}
+
+func TestCredentialEnvFollowsPreset(t *testing.T) {
+	for up, want := range map[Upstream]string{
+		{Preset: "groq", Profile: "openai"}:    "GROQ_API_KEY",
+		{Preset: "stripe", Profile: "generic"}: "STRIPE_SECRET_KEY",
+		{Profile: "anthropic"}:                 "ANTHROPIC_API_KEY",
+		{Profile: "generic"}:                   "API_KEY",
+	} {
+		if got := credentialEnv(up); got != want {
+			t.Errorf("%+v: %s, want %s", up, got, want)
+		}
 	}
 }
 

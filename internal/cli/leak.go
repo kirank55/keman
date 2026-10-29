@@ -14,6 +14,7 @@ import (
 
 	"github.com/kirank55/keman/internal/config"
 	"github.com/kirank55/keman/internal/expiry"
+	"github.com/kirank55/keman/internal/preset"
 	"github.com/kirank55/keman/internal/scan"
 )
 
@@ -152,9 +153,9 @@ func (c *cmd) canary(args []string) int {
 		baseURL = localProxyURL(cfg)
 		fmt.Fprintf(c.stderr, "warning: no --base-url; using %s. The canary only fires if whoever finds it can reach Keman at that URL.\n", baseURL)
 	}
-	varPrefix, path := canaryNames(up)
+	keyVar, urlVar, path := canaryNames(up)
 	if prefix != "" {
-		varPrefix = prefix
+		keyVar, urlVar = prefix+"_API_KEY", prefix+"_BASE_URL"
 	}
 	var created struct {
 		ID    string `json:"id"`
@@ -165,7 +166,6 @@ func (c *cmd) canary(args []string) int {
 		fmt.Fprintln(c.stderr, err.Error())
 		return 1
 	}
-	keyVar, urlVar := varPrefix+"_API_KEY", varPrefix+"_BASE_URL"
 	if format == "json" {
 		enc := json.NewEncoder(c.stdout)
 		enc.SetIndent("", "  ")
@@ -183,6 +183,7 @@ type upstreamInfo struct {
 	ID      string `json:"id"`
 	Name    string `json:"name"`
 	Profile string `json:"profile"`
+	Preset  string `json:"preset"`
 	Host    string `json:"host"`
 }
 
@@ -212,9 +213,24 @@ func (c *cmd) credentialUpstream(api *client, credID string) (upstreamInfo, erro
 	return upstreamInfo{}, fmt.Errorf("upstream for credential %s not found", credID)
 }
 
-// canaryNames picks the variable prefix and base path an SDK for this
-// upstream would use, so the decoy looks like ordinary configuration.
-func canaryNames(up upstreamInfo) (prefix, path string) {
+// canaryNames picks the variables and base path an SDK for this upstream
+// would use, so the decoy looks like ordinary configuration.
+func canaryNames(up upstreamInfo) (keyVar, urlVar, path string) {
+	if p, ok := preset.Get(up.Preset); ok {
+		base := p.Env
+		for _, suffix := range []string{"_API_KEY", "_SECRET_KEY", "_SERVER_TOKEN", "_AUTH_TOKEN", "_BOT_TOKEN", "_API_TOKEN", "_TOKEN", "_KEY"} {
+			if strings.HasSuffix(base, suffix) {
+				base = strings.TrimSuffix(base, suffix)
+				break
+			}
+		}
+		return p.Env, base + "_BASE_URL", p.BasePath
+	}
+	prefix, path := legacyCanaryPrefix(up)
+	return prefix + "_API_KEY", prefix + "_BASE_URL", path
+}
+
+func legacyCanaryPrefix(up upstreamInfo) (prefix, path string) {
 	switch {
 	case up.Profile == "anthropic":
 		return "ANTHROPIC", ""
@@ -401,18 +417,15 @@ func (c *cmd) printScan(groups []scan.Group, places int) {
 		case f.Profile == "":
 			fmt.Fprintf(w, "  Keman cannot front %s keys. Rotate it at the provider and keep it in a secret store.\n", f.Provider)
 		default:
-			name := strings.ToLower(strings.ReplaceAll(f.Provider, " ", "-"))
-			fmt.Fprintln(w, "  Move it behind Keman so apps only ever hold a virtual key:")
-			up := fmt.Sprintf("    keman upstream add --name %s --profile %s --host %s --port 443 --tls", name, f.Profile, f.Host)
-			if f.Profile == "generic" {
-				up += ` --path "METHOD /path"`
+			name := f.Preset
+			switch {
+			case f.Rule == "google_api":
+				fmt.Fprintln(w, "  If it is a Gemini API key, move it behind Keman so apps only ever hold a virtual key:")
+			default:
+				fmt.Fprintln(w, "  Move it behind Keman so apps only ever hold a virtual key:")
 			}
-			fmt.Fprintln(w, up+"    (once)")
-			header := ""
-			if f.Profile == "anthropic" {
-				header = ` --header "x-api-key: {key}"`
-			}
-			fmt.Fprintf(w, "    keman credential add --upstream %s --name %s-main%s --secret-env %s\n", name, name, header, f.Env)
+			fmt.Fprintf(w, "    keman upstream add --preset %s    (once)\n", name)
+			fmt.Fprintf(w, "    keman credential add --upstream %s --name %s-main --secret-env %s\n", name, name, f.Env)
 			fmt.Fprintf(w, "    keman key create --credential %s-main --name <app> --expires 90d\n", name)
 			if inHistory {
 				fmt.Fprintf(w, "  It is in git history, so treat it as leaked: rotate it at %s too.\n", f.Provider)

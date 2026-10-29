@@ -89,6 +89,7 @@ func (h *HTTP) ListUpstreams(ctx context.Context) ([]Upstream, error) {
 		ID      string `json:"id"`
 		Name    string `json:"name"`
 		Profile string `json:"profile"`
+		Preset  string `json:"preset"`
 		Host    string `json:"host"`
 		Port    int    `json:"port"`
 		TLS     bool   `json:"tls"`
@@ -98,7 +99,7 @@ func (h *HTTP) ListUpstreams(ctx context.Context) ([]Upstream, error) {
 	}
 	out := make([]Upstream, 0, len(wire))
 	for _, w := range wire {
-		out = append(out, Upstream{ID: w.ID, Name: w.Name, Profile: w.Profile, Host: w.Host, Port: w.Port, TLS: w.TLS})
+		out = append(out, Upstream{ID: w.ID, Name: w.Name, Profile: w.Profile, Preset: w.Preset, Host: w.Host, Port: w.Port, TLS: w.TLS})
 	}
 	return out, nil
 }
@@ -190,7 +191,7 @@ func (h *HTTP) SetClientName(ctx context.Context, ip, name string) error {
 
 func (h *HTTP) AddUpstream(ctx context.Context, d UpstreamDraft) (Upstream, error) {
 	body := map[string]any{
-		"name": d.Name, "profile": d.Profile, "host": d.Host,
+		"name": d.Name, "profile": d.Profile, "preset": d.Preset, "host": d.Host,
 		"protocol": "http", "port": d.Port, "tls": d.TLS,
 		"path_allowlist": d.Paths,
 	}
@@ -198,6 +199,7 @@ func (h *HTTP) AddUpstream(ctx context.Context, d UpstreamDraft) (Upstream, erro
 		ID      string `json:"id"`
 		Name    string `json:"name"`
 		Profile string `json:"profile"`
+		Preset  string `json:"preset"`
 		Host    string `json:"host"`
 		Port    int    `json:"port"`
 		TLS     bool   `json:"tls"`
@@ -205,13 +207,14 @@ func (h *HTTP) AddUpstream(ctx context.Context, d UpstreamDraft) (Upstream, erro
 	if err := h.c.Call(ctx, http.MethodPost, "/v1/upstreams", body, &out); err != nil {
 		return Upstream{}, explain(err, h.c.Base)
 	}
-	return Upstream{ID: out.ID, Name: out.Name, Profile: out.Profile, Host: out.Host, Port: out.Port, TLS: out.TLS}, nil
+	return Upstream{ID: out.ID, Name: out.Name, Profile: out.Profile, Preset: out.Preset, Host: out.Host, Port: out.Port, TLS: out.TLS}, nil
 }
 
+// AddCredential leaves the auth style to the admin API, which takes it from
+// the upstream's preset or profile.
 func (h *HTTP) AddCredential(ctx context.Context, d CredentialDraft) (Credential, error) {
 	body := map[string]any{
 		"upstream_id": d.UpstreamID, "name": d.Name, "secret": d.Secret,
-		"auth_style": "header", "header_template": "Authorization: Bearer {key}",
 	}
 	var out struct {
 		ID         string `json:"id"`

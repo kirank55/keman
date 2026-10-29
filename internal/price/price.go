@@ -21,14 +21,19 @@ type Model struct {
 	CacheWrite *int64
 }
 
+// Table holds global prices and per-preset prices. The same model id can
+// cost different amounts on different platforms, so a preset's own entry
+// wins over the global one.
 type Table struct {
 	Version string
 	models  map[string]Model
+	presets map[string]map[string]Model
 }
 
 type file struct {
-	Version string               `json:"version"`
-	Models  map[string]jsonModel `json:"models"`
+	Version string                          `json:"version"`
+	Models  map[string]jsonModel            `json:"models"`
+	Presets map[string]map[string]jsonModel `json:"presets"`
 }
 
 type jsonModel struct {
@@ -39,7 +44,7 @@ type jsonModel struct {
 }
 
 // Load reads the embedded snapshot, then merges an optional overlay file.
-// Overlay entries replace the same model name.
+// Overlay entries replace the same model name in the same section.
 func Load(overlayPath string) (*Table, error) {
 	t, err := parse(builtin)
 	if err != nil {
@@ -59,6 +64,14 @@ func Load(overlayPath string) (*Table, error) {
 	for k, v := range over.models {
 		t.models[k] = v
 	}
+	for p, models := range over.presets {
+		if t.presets[p] == nil {
+			t.presets[p] = map[string]Model{}
+		}
+		for k, v := range models {
+			t.presets[p][k] = v
+		}
+	}
 	if over.Version != "" {
 		t.Version = over.Version
 	}
@@ -70,16 +83,31 @@ func parse(b []byte) (*Table, error) {
 	if err := json.Unmarshal(b, &f); err != nil {
 		return nil, err
 	}
-	t := &Table{Version: f.Version, models: make(map[string]Model, len(f.Models))}
-	for name, m := range f.Models {
-		t.models[name] = Model{Input: m.Input, Output: m.Output, Cached: m.Cached, CacheWrite: m.CacheWrite}
+	t := &Table{Version: f.Version, models: convert(f.Models), presets: make(map[string]map[string]Model, len(f.Presets))}
+	for p, models := range f.Presets {
+		t.presets[p] = convert(models)
 	}
 	return t, nil
 }
 
-func (t *Table) Lookup(model string) (Model, bool) {
+func convert(in map[string]jsonModel) map[string]Model {
+	out := make(map[string]Model, len(in))
+	for name, m := range in {
+		out[name] = Model{Input: m.Input, Output: m.Output, Cached: m.Cached, CacheWrite: m.CacheWrite}
+	}
+	return out
+}
+
+// Lookup finds model under preset first, then in the global table.
+// An empty preset only reads the global table.
+func (t *Table) Lookup(preset, model string) (Model, bool) {
 	if t == nil {
 		return Model{}, false
+	}
+	if preset != "" {
+		if m, ok := t.presets[preset][model]; ok {
+			return m, true
+		}
 	}
 	m, ok := t.models[model]
 	return m, ok
@@ -87,8 +115,8 @@ func (t *Table) Lookup(model string) (Model, bool) {
 
 // Cost returns the microdollar cost of a completed call.
 // inputIncludesCached is true for OpenAI, where Input already counts cached tokens.
-func (t *Table) Cost(model string, input, output, cached, cacheWrite int64, inputIncludesCached bool) (int64, bool) {
-	m, ok := t.Lookup(model)
+func (t *Table) Cost(preset, model string, input, output, cached, cacheWrite int64, inputIncludesCached bool) (int64, bool) {
+	m, ok := t.Lookup(preset, model)
 	if !ok {
 		return 0, false
 	}
@@ -118,8 +146,8 @@ func (t *Table) Cost(model string, input, output, cached, cacheWrite int64, inpu
 
 // Reserve estimates the hold for a request that has not run yet.
 // maxTokens nil means the output term is defaultReservation.
-func (t *Table) Reserve(model string, bodyBytes int64, maxTokens *int64, defaultReservation int64) (int64, bool) {
-	m, ok := t.Lookup(model)
+func (t *Table) Reserve(preset, model string, bodyBytes int64, maxTokens *int64, defaultReservation int64) (int64, bool) {
+	m, ok := t.Lookup(preset, model)
 	if !ok {
 		return 0, false
 	}

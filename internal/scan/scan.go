@@ -14,14 +14,17 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/kirank55/keman/internal/preset"
 )
 
 // Rule is one secret format.
 type Rule struct {
 	ID       string
 	Provider string
-	// Profile is the Keman profile that can front this key. Empty means
+	// Preset is the Keman preset that can front this key. Empty means
 	// Keman cannot proxy it, and the advice is to rotate it at the provider.
+	Preset  string
 	Profile string
 	Host    string
 	Env     string
@@ -30,16 +33,34 @@ type Rule struct {
 
 // Rules are checked in order; the first match at a position wins, so the
 // more specific prefixes come first.
-var Rules = []Rule{
+var Rules = withPresets([]Rule{
 	{ID: "keman_virtual_key", Provider: "Keman virtual key", re: regexp.MustCompile(`\bkmn_([0-9A-Za-z]{8})_[0-9A-Za-z]{20,}`)},
-	{ID: "anthropic", Provider: "Anthropic", Profile: "anthropic", Host: "api.anthropic.com", Env: "ANTHROPIC_API_KEY", re: regexp.MustCompile(`\bsk-ant-(?:api|admin)\d\d-[A-Za-z0-9_-]{20,}`)},
-	{ID: "openrouter", Provider: "OpenRouter", Profile: "openai", Host: "openrouter.ai", Env: "OPENROUTER_API_KEY", re: regexp.MustCompile(`\bsk-or-v1-[0-9a-f]{64}\b`)},
-	{ID: "openai", Provider: "OpenAI", Profile: "openai", Host: "api.openai.com", Env: "OPENAI_API_KEY", re: regexp.MustCompile(`\bsk-(?:proj-|svcacct-|admin-)?[A-Za-z0-9_-]{20,}T3BlbkFJ[A-Za-z0-9_-]{20,}|\bsk-(?:proj|svcacct|admin)-[A-Za-z0-9_-]{40,}`)},
-	{ID: "stripe", Provider: "Stripe", Profile: "generic", Host: "api.stripe.com", Env: "STRIPE_SECRET_KEY", re: regexp.MustCompile(`\b(?:sk|rk)_live_[0-9A-Za-z]{24,}`)},
-	{ID: "github", Provider: "GitHub", Profile: "generic", Host: "api.github.com", Env: "GITHUB_TOKEN", re: regexp.MustCompile(`\bgh[pousr]_[A-Za-z0-9]{36,}|\bgithub_pat_[A-Za-z0-9_]{60,}`)},
-	{ID: "slack", Provider: "Slack", Profile: "generic", Host: "slack.com", Env: "SLACK_TOKEN", re: regexp.MustCompile(`\bxox[abposr]-[0-9A-Za-z-]{20,}`)},
-	{ID: "google_api", Provider: "Google API", Profile: "", Env: "GOOGLE_API_KEY", re: regexp.MustCompile(`\bAIza[0-9A-Za-z_-]{35}\b`)},
-	{ID: "aws_access_key", Provider: "AWS access key", Profile: "", Env: "AWS_ACCESS_KEY_ID", re: regexp.MustCompile(`\b(?:AKIA|ASIA)[0-9A-Z]{16}\b`)},
+	{ID: "anthropic", Provider: "Anthropic", Preset: "anthropic", re: regexp.MustCompile(`\bsk-ant-(?:api|admin)\d\d-[A-Za-z0-9_-]{20,}`)},
+	{ID: "openrouter", Provider: "OpenRouter", Preset: "openrouter", re: regexp.MustCompile(`\bsk-or-v1-[0-9a-f]{64}\b`)},
+	{ID: "openai", Provider: "OpenAI", Preset: "openai", re: regexp.MustCompile(`\bsk-(?:proj-|svcacct-|admin-)?[A-Za-z0-9_-]{20,}T3BlbkFJ[A-Za-z0-9_-]{20,}|\bsk-(?:proj|svcacct|admin)-[A-Za-z0-9_-]{40,}`)},
+	{ID: "groq", Provider: "Groq", Preset: "groq", re: regexp.MustCompile(`\bgsk_[A-Za-z0-9]{40,}\b`)},
+	{ID: "xai", Provider: "xAI", Preset: "xai", re: regexp.MustCompile(`\bxai-[A-Za-z0-9]{40,}\b`)},
+	{ID: "stripe", Provider: "Stripe", Preset: "stripe", re: regexp.MustCompile(`\b(?:sk|rk)_live_[0-9A-Za-z]{24,}`)},
+	{ID: "github", Provider: "GitHub", Preset: "github", re: regexp.MustCompile(`\bgh[pousr]_[A-Za-z0-9]{36,}|\bgithub_pat_[A-Za-z0-9_]{60,}`)},
+	{ID: "slack", Provider: "Slack", Preset: "slack", re: regexp.MustCompile(`\bxox[abposr]-[0-9A-Za-z-]{20,}`)},
+	{ID: "sendgrid", Provider: "SendGrid", Preset: "sendgrid", re: regexp.MustCompile(`\bSG\.[A-Za-z0-9_-]{16,}\.[A-Za-z0-9_-]{16,}`)},
+	{ID: "linear", Provider: "Linear", Preset: "linear", re: regexp.MustCompile(`\blin_api_[A-Za-z0-9]{32,}\b`)},
+	{ID: "google_api", Provider: "Google API", Preset: "gemini", re: regexp.MustCompile(`\bAIza[0-9A-Za-z_-]{35}\b`)},
+	{ID: "aws_access_key", Provider: "AWS access key", Env: "AWS_ACCESS_KEY_ID", re: regexp.MustCompile(`\b(?:AKIA|ASIA)[0-9A-Z]{16}\b`)},
+})
+
+func withPresets(rules []Rule) []Rule {
+	for i, r := range rules {
+		if r.Preset == "" {
+			continue
+		}
+		p, ok := preset.Get(r.Preset)
+		if !ok {
+			panic("scan rule " + r.ID + " names unknown preset " + r.Preset)
+		}
+		rules[i].Profile, rules[i].Host, rules[i].Env = p.Profile, p.Host, p.Env
+	}
+	return rules
 }
 
 // Finding is one secret in one place. Secret is never set to the full value.
@@ -52,6 +73,7 @@ type Finding struct {
 	Redacted string `json:"redacted"`
 	// KeyID is set for Keman virtual keys: the id part, which is safe to show.
 	KeyID   string `json:"virtual_key_id,omitempty"`
+	Preset  string `json:"preset,omitempty"`
 	Profile string `json:"profile,omitempty"`
 	Host    string `json:"host,omitempty"`
 	Env     string `json:"env,omitempty"`
@@ -95,7 +117,7 @@ func Line(text string) []Finding {
 			secret := text[start:end]
 			f := Finding{
 				Rule: r.ID, Provider: r.Provider, Redacted: Redact(secret),
-				Profile: r.Profile, Host: r.Host, Env: r.Env, fingerprint: secret,
+				Preset: r.Preset, Profile: r.Profile, Host: r.Host, Env: r.Env, fingerprint: secret,
 			}
 			if r.ID == "keman_virtual_key" && len(loc) >= 4 && loc[2] >= 0 {
 				f.KeyID = text[loc[2]:loc[3]]

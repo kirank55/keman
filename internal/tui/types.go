@@ -102,6 +102,7 @@ type Upstream struct {
 	ID      string
 	Name    string
 	Profile string
+	Preset  string
 	Host    string
 	Port    int
 	TLS     bool
@@ -116,10 +117,11 @@ type Credential struct {
 	Last4      string
 }
 
-// UpstreamDraft is a new upstream. Paths replace the profile's built-in list.
+// UpstreamDraft is a new upstream. Paths replace the preset's or profile's list.
 type UpstreamDraft struct {
 	Name    string
 	Profile string
+	Preset  string
 	Host    string
 	Port    int
 	TLS     bool
@@ -368,7 +370,7 @@ func newModel(ctx context.Context, api API, base string) model {
 	m.upPort = bareInput(5, 6, "443")
 	m.upPaths = bareInput(300, 72, "POST /path")
 	m.credName = bareInput(64, 24, "primary")
-	m.credEnv = bareInput(64, 32, "OPENROUTER_API_KEY")
+	m.credEnv = bareInput(64, 32, "API_KEY")
 	m.credSecret = bareInput(512, 32, "key")
 	m.credSecret.EchoMode = textinput.EchoPassword
 	m.adminInput = bareInput(256, 48, "kma_...")

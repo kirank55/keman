@@ -20,6 +20,7 @@
   <a href="#install">Install</a> ·
   <a href="#try-it">Try it</a> ·
   <a href="#quickstart">Quickstart</a> ·
+  <a href="#supported-platforms">Platforms</a> ·
   <a href="#contain-a-leak">Contain a leak</a> ·
   <a href="#cli">CLI</a> ·
   <a href="#docker">Docker</a> ·
@@ -36,7 +37,7 @@ Keman sits between your apps and the provider. Apps send a `kmn_…` virtual key
 - **Decoys catch the thief.** Canary keys never forward anything. Plant one in a repo or CI config, and any use raises a critical alert.
 - **You kill it in one step.** `keman key rotate laptop --grace 0` issues a replacement with the same policy and revokes the leaked key. The real provider key stays the same, and so does every other app.
 
-It is a single Go binary with pure-Go SQLite, so it needs no CGO. It works with OpenAI-compatible APIs (including OpenRouter), Anthropic, and any HTTP API that authenticates with a header, such as Stripe or GitHub. It runs on Linux, macOS and Windows, does not phone home, and is Apache-2.0.
+It is a single Go binary with pure-Go SQLite, so it needs no CGO. It ships presets for 21 platforms, among them OpenAI, Anthropic, OpenRouter, Gemini, Groq, Mistral, DeepSeek, xAI, Stripe, GitHub, Slack and Twilio (the full list is under [Supported platforms](#supported-platforms)). Any other HTTP API that authenticates with a header or HTTP Basic works too. It runs on Linux, macOS and Windows, does not phone home, and is Apache-2.0.
 
 > **Beta.** The spec is [`beta.md`](beta.md). Decisions the spec left open are in [`docs/ASSUMPTIONS.md`](docs/ASSUMPTIONS.md). Changes are in [`CHANGELOG.md`](CHANGELOG.md).
 
@@ -80,7 +81,7 @@ KEMAN_ADMIN_TOKEN="$(cat .demo/admin.token)" .demo/keman --config .demo/keman.ya
 
 ## Find the keys you already leaked
 
-`keman scan` looks for OpenAI, Anthropic, OpenRouter, Stripe, GitHub, Slack, Google and AWS keys, and Keman virtual keys. With `--history` it checks every commit on every branch as well as the files on disk:
+`keman scan` looks for OpenAI, Anthropic, OpenRouter, Groq, xAI, Stripe, GitHub, Slack, SendGrid, Linear, Google and AWS keys, and Keman virtual keys. For each one it prints the preset that puts the key behind Keman. With `--history` it checks every commit on every branch as well as the files on disk:
 
 ```sh
 keman scan . --history
@@ -93,7 +94,7 @@ OpenAI  sk-proj-…x7Yq
   .env:4
   config/dev.env:2  (commit 3f9c1a2b7d10)
   Move it behind Keman so apps only ever hold a virtual key:
-    keman upstream add --name openai --profile openai --host api.openai.com --port 443 --tls    (once)
+    keman upstream add --preset openai    (once)
     keman credential add --upstream openai --name openai-main --secret-env OPENAI_API_KEY
     keman key create --credential openai-main --name <app> --expires 90d
   It is in git history, so treat it as leaked: rotate it at OpenAI too.
@@ -113,7 +114,7 @@ keman         # opens the terminal UI and starts the proxy
 In the UI:
 
 1. Paste the admin token from `init`. It is masked and kept only in memory. Set `KEMAN_ADMIN_TOKEN` to skip this prompt.
-2. Press `a` to add an upstream. OpenRouter is filled in as a suggestion. Use ←/→ on **profile** to switch to `anthropic` or `generic`, or edit any field.
+2. Press `a` to add an upstream. OpenRouter is filled in as a suggestion. Use ←/→ on **platform** to pick any of the [supported platforms](#supported-platforms), or a `custom` entry to type the host yourself. Every field can still be edited.
 3. The credential form opens. Type the provider API key (masked), or read it from an environment variable. It is stored encrypted and never shown again.
 4. The new-key form opens. The `kmn_…` virtual key is shown **once**. Copy it. It expires in 90 days unless you change that with `p`.
 
@@ -123,7 +124,7 @@ Run `keman` from the directory where you ran `init`, or pass `--config path/to/k
 
 ### Point an app at Keman
 
-Send the virtual key wherever the app expects its API key, and change the base URL:
+Send the virtual key wherever the app expects its API key, and change the base URL to Keman's address plus the platform's path. The table under [Supported platforms](#supported-platforms) lists the base URL for each one; for example:
 
 | Client | Base URL |
 | --- | --- |
@@ -149,6 +150,48 @@ Back in the UI, select the key and press Enter to see who called it and from whe
 ```
 
 The script builds Keman, initializes `.quickstart/`, starts a mock OpenAI server, creates a virtual key, sends one request through the proxy, then fires an allowlist detection with `keman detection test --live`. It prints the command to open the UI on that install. Set `KEMAN_QUICKSTART_PROXY_PORT` and `KEMAN_QUICKSTART_ADMIN_PORT` if 8080 or 8081 is taken.
+
+## Supported platforms
+
+A preset fills in an upstream for a known platform: its host, TLS, path allowlist, and the auth header its credentials use. LLM platforms track tokens and spend, and can have spend caps. The others count requests and are limited to the paths their preset allows.
+
+<!-- presets:start -->
+| Platform | Preset | Tracks | App base URL |
+| --- | --- | --- | --- |
+| OpenAI | `openai` | tokens and spend | `http://127.0.0.1:8080/v1` |
+| Anthropic | `anthropic` | tokens and spend | `http://127.0.0.1:8080` |
+| OpenRouter | `openrouter` | tokens and spend | `http://127.0.0.1:8080/api/v1` |
+| Google Gemini (OpenAI-compatible) | `gemini` | tokens and spend | `http://127.0.0.1:8080/v1beta/openai` |
+| Groq | `groq` | tokens and spend | `http://127.0.0.1:8080/openai/v1` |
+| Mistral | `mistral` | tokens and spend | `http://127.0.0.1:8080/v1` |
+| DeepSeek | `deepseek` | tokens and spend | `http://127.0.0.1:8080` |
+| xAI (Grok) | `xai` | tokens and spend | `http://127.0.0.1:8080/v1` |
+| Together AI | `together` | tokens and spend | `http://127.0.0.1:8080/v1` |
+| Fireworks AI | `fireworks` | tokens and spend | `http://127.0.0.1:8080/inference/v1` |
+| Cerebras | `cerebras` | tokens and spend | `http://127.0.0.1:8080/v1` |
+| Stripe | `stripe` | requests | `http://127.0.0.1:8080` |
+| GitHub | `github` | requests | `http://127.0.0.1:8080` |
+| Slack | `slack` | requests | `http://127.0.0.1:8080/api` |
+| Twilio | `twilio` | requests | `http://127.0.0.1:8080` |
+| SendGrid | `sendgrid` | requests | `http://127.0.0.1:8080` |
+| Resend | `resend` | requests | `http://127.0.0.1:8080` |
+| Postmark | `postmark` | requests | `http://127.0.0.1:8080` |
+| Cloudflare | `cloudflare` | requests | `http://127.0.0.1:8080/client/v4` |
+| Linear | `linear` | requests | `http://127.0.0.1:8080` |
+| Notion | `notion` | requests | `http://127.0.0.1:8080` |
+<!-- presets:end -->
+
+```sh
+keman upstream presets                     # this list, with the host and the key variable for each
+keman upstream add --preset groq           # name, host, TLS and paths from the preset
+keman credential add --upstream groq --name primary --secret-env GROQ_API_KEY
+```
+
+- Any flag overrides the preset: `--name`, `--host`, `--port`, `--no-tls`, and `--path` (which replaces the preset's allowlist). `--profile` must match the preset's.
+- The credential's auth comes from the preset: `x-api-key` for Anthropic, `Authorization: {key}` for Linear, `X-Postmark-Server-Token` for Postmark, HTTP Basic for Twilio, and a Bearer token for the rest. `--header`, `--auth` and `--username` override it.
+- Twilio takes the secret as `AccountSID:AuthToken`, unless you pass `--username`.
+- Apps can present the virtual key the way their SDK already sends its key: as a Bearer token, GitHub's `token` scheme, `x-api-key`, the username or password of HTTP Basic, or a provider header such as `X-Postmark-Server-Token`. Keman removes that header before it forwards the request.
+- A platform without a preset still works with `--profile openai`, `anthropic` or `generic` and your own host and paths.
 
 ## The terminal UI
 
@@ -197,8 +240,12 @@ Every operation is also a one-shot command, for scripts:
 export KEMAN_ADMIN_TOKEN=kma_...
 
 # Set up
-keman upstream add --name openai --profile openai --host api.openai.com --port 443 --tls
+keman upstream presets
+keman upstream add --preset openai
+keman upstream add --preset twilio
+keman upstream add --name internal --profile generic --host api.internal.example --port 443 --tls --path "GET /v1/**"
 keman credential add --upstream openai --name primary --secret-env OPENAI_API_KEY
+keman credential add --upstream twilio --name sms --secret-env TWILIO_CREDENTIALS    # AccountSID:AuthToken
 keman key create --credential primary --name laptop             # expires in 90 days
 keman key create --credential primary --name ci --expires 30d
 keman key create --credential primary --name decoy --kind canary
@@ -243,7 +290,7 @@ The proxy listens on `0.0.0.0:8080`. The admin API and `/metrics` listen on `127
 - Country and ASN rules, and country allowlists, need a GeoLite2 or DB-IP `.mmdb` file in `geoip_country_db` and `geoip_asn_db`.
 - `trusted_proxies` is empty by default. `X-Forwarded-For` from anyone else is ignored and is not sent upstream. All address rules use one client IP.
 - New standard keys expire after `default_key_ttl` (default `2160h`, 90 days). Set it to `0s` to turn the default off.
-- OpenAI and Anthropic have built-in path allowlists. Generic HTTP requires one, so a leaked key for a generic upstream can only call the endpoints you listed. Paths with `.` or `..` segments or backslashes never match, so `/v1/customers/../payouts` cannot slip past `GET /v1/customers/*`.
+- OpenAI and Anthropic have built-in path allowlists, and every preset ships one. A custom generic HTTP upstream requires one, so a leaked key for a generic upstream can only call the endpoints you listed. Paths with `.` or `..` segments or backslashes never match, so `/v1/customers/../payouts` cannot slip past `GET /v1/customers/*`.
 
 ### Test your detections
 
@@ -257,16 +304,21 @@ The proxy listens on `0.0.0.0:8080`. The admin API and `/metrics` listen on `127
 
 ## Spend caps (LLM upstreams)
 
-Runaway spend is often the first sign of a stolen LLM key, so OpenAI and Anthropic keys can also have daily and monthly caps.
+Runaway spend is often the first sign of a stolen LLM key, so keys on an LLM upstream (OpenAI-compatible or Anthropic, which covers every platform that tracks tokens and spend) can also have daily and monthly caps.
 
-- Money is stored as integer microdollars. Prices ship in `internal/price/prices.json` (snapshot 2026-10-27).
-- A model that is not in the price table is recorded with no cost. If the key has a spend cap, the request is refused with `unknown_model_price`. That includes OpenRouter's `vendor/model` ids. To cap those keys, add prices with `prices_file`. Prices are microdollars per million tokens, and the key is the `model` string exactly as the app sends it:
+- Money is stored as integer microdollars. Prices ship in `internal/price/prices.json` (snapshot 2026-10-29). Its `models` section is global. Its `presets` section holds prices for one platform, such as `groq` or `together`, and wins over `models` for upstreams made from that preset, since the same model id can cost different amounts on different platforms.
+- A model that is not in the price table is recorded with no cost. If the key has a spend cap, the request is refused with `unknown_model_price`. That includes OpenRouter's `vendor/model` ids. To cap those keys, add prices with `prices_file`, globally or under a preset. Prices are microdollars per million tokens, and the key is the `model` string exactly as the app sends it:
 
   ```json
   {
     "version": "local",
     "models": {
-      "openai/gpt-4o-mini": {"input": 150000, "output": 600000}
+      "gpt-4o-mini": {"input": 150000, "output": 600000}
+    },
+    "presets": {
+      "openrouter": {
+        "openai/gpt-4o-mini": {"input": 150000, "output": 600000}
+      }
     }
   }
   ```

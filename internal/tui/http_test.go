@@ -100,7 +100,7 @@ func TestHTTPAddUpstreamAndCredential(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/v1/upstreams":
-			_, _ = w.Write([]byte(`{"id":"u1","name":"openrouter","profile":"openai","host":"openrouter.ai","port":443,"tls":true}`))
+			_, _ = w.Write([]byte(`{"id":"u1","name":"openrouter","profile":"openai","preset":"openrouter","host":"openrouter.ai","port":443,"tls":true}`))
 		case "/v1/credentials":
 			_, _ = w.Write([]byte(`{"id":"c1","upstream_id":"u1","name":"primary","auth_style":"header","last4":"cret"}`))
 		default:
@@ -110,10 +110,10 @@ func TestHTTPAddUpstreamAndCredential(t *testing.T) {
 	defer srv.Close()
 	h := NewHTTP(adminclient.New(srv.URL, "kma"))
 	up, err := h.AddUpstream(context.Background(), UpstreamDraft{
-		Name: "openrouter", Profile: "openai", Host: "openrouter.ai", Port: 443, TLS: true,
+		Name: "openrouter", Profile: "openai", Preset: "openrouter", Host: "openrouter.ai", Port: 443, TLS: true,
 		Paths: []string{"POST /api/v1/chat/completions"},
 	})
-	if err != nil || up.ID != "u1" || up.Host != "openrouter.ai" || !up.TLS {
+	if err != nil || up.ID != "u1" || up.Host != "openrouter.ai" || !up.TLS || up.Preset != "openrouter" {
 		t.Fatal(err, up)
 	}
 	cred, err := h.AddCredential(context.Background(), CredentialDraft{UpstreamID: "u1", Name: "primary", Secret: "sk-test"})
@@ -121,10 +121,11 @@ func TestHTTPAddUpstreamAndCredential(t *testing.T) {
 		t.Fatal(err, cred)
 	}
 	blob := strings.Join(got, "\n")
-	if !strings.Contains(blob, `"path_allowlist":["POST /api/v1/chat/completions"]`) {
+	if !strings.Contains(blob, `"path_allowlist":["POST /api/v1/chat/completions"]`) || !strings.Contains(blob, `"preset":"openrouter"`) {
 		t.Fatal(blob)
 	}
-	if !strings.Contains(blob, `"secret":"sk-test"`) || !strings.Contains(blob, `"header_template":"Authorization: Bearer {key}"`) {
+	// The admin API picks the auth header from the upstream's preset.
+	if !strings.Contains(blob, `"secret":"sk-test"`) || strings.Contains(blob, `"header_template"`) {
 		t.Fatal(blob)
 	}
 }

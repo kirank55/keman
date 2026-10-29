@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,6 +23,7 @@ import (
 	"github.com/kirank55/keman/internal/headers"
 	"github.com/kirank55/keman/internal/keyfmt"
 	"github.com/kirank55/keman/internal/model"
+	"github.com/kirank55/keman/internal/preset"
 	"github.com/kirank55/keman/internal/profile"
 	"github.com/kirank55/keman/internal/state"
 	"github.com/kirank55/keman/internal/store"
@@ -83,6 +85,52 @@ func (s *Service) audit(ctx context.Context, actor, action, target, before, afte
 	}
 }
 
+// UpstreamRequest is a new upstream. Nil fields and empty strings take the
+// preset's value when Preset is set.
+type UpstreamRequest struct {
+	model.Upstream
+	TLS         *bool
+	InjectUsage *bool
+}
+
+// CreateUpstreamFrom fills r from its preset, then creates the upstream.
+func (s *Service) CreateUpstreamFrom(ctx context.Context, r UpstreamRequest, actor, ip string) (model.Upstream, error) {
+	u := r.Upstream
+	u.Preset = strings.ToLower(strings.TrimSpace(u.Preset))
+	tls, inject := false, true
+	if u.Preset != "" {
+		p, ok := preset.Get(u.Preset)
+		if !ok {
+			return model.Upstream{}, &OpError{Status: 400, Code: "invalid", Message: "Unknown preset " + strconv.Quote(u.Preset) + ". Run keman upstream presets to list them."}
+		}
+		if u.Profile != "" && u.Profile != p.Profile {
+			return model.Upstream{}, &OpError{Status: 400, Code: "invalid", Message: "Preset " + p.Name + " uses profile " + p.Profile + "."}
+		}
+		u.Profile = p.Profile
+		if strings.TrimSpace(u.Name) == "" {
+			u.Name = p.Name
+		}
+		if u.Host == "" {
+			u.Host = p.Host
+		}
+		if u.Port == 0 {
+			u.Port = p.Port
+		}
+		if len(u.PathAllowlist) == 0 {
+			u.PathAllowlist = append([]string(nil), p.Paths...)
+		}
+		tls, inject = p.TLS, p.InjectUsage
+	}
+	if r.TLS != nil {
+		tls = *r.TLS
+	}
+	if r.InjectUsage != nil {
+		inject = *r.InjectUsage
+	}
+	u.TLS, u.InjectUsage = tls, inject
+	return s.CreateUpstream(ctx, u, actor, ip)
+}
+
 func (s *Service) CreateUpstream(ctx context.Context, u model.Upstream, actor, ip string) (model.Upstream, error) {
 	u.Name = strings.TrimSpace(u.Name)
 	if u.Name == "" {
@@ -131,14 +179,16 @@ func (s *Service) CreateCredential(ctx context.Context, c model.Credential, secr
 	if secret == "" {
 		return model.Credential{}, &OpError{Status: 400, Code: "invalid", Message: "Credential secret is required."}
 	}
-	if _, ok := s.State.Upstream(c.UpstreamID); !ok {
+	up, ok := s.State.Upstream(c.UpstreamID)
+	if !ok {
 		return model.Credential{}, &OpError{Status: 404, Code: "not_found", Message: "Upstream not found."}
 	}
-	if c.AuthStyle == "" {
-		c.AuthStyle = model.AuthHeader
-	}
+	c = defaultAuth(c, up)
 	if err := checkAuth(c); err != nil {
 		return model.Credential{}, err
+	}
+	if c.AuthStyle == model.AuthBasic && c.SecretIsUserPass && !strings.Contains(secret, ":") {
+		return model.Credential{}, &OpError{Status: 400, Code: "invalid", Message: "This upstream uses HTTP Basic: give the secret as user:password, or set a username."}
 	}
 	id, err := keyfmt.NewID("cred", 12)
 	if err != nil {
@@ -676,6 +726,37 @@ func cleanClientName(name string) (string, error) {
 	return name, nil
 }
 
+// defaultAuth fills the auth fields the caller left empty from the
+// upstream's preset, or from its profile when it has none.
+func defaultAuth(c model.Credential, up model.Upstream) model.Credential {
+	p, hasPreset := preset.Get(up.Preset)
+	if c.AuthStyle == "" {
+		switch {
+		case c.HeaderTemplate != "":
+			c.AuthStyle = model.AuthHeader
+		case hasPreset:
+			c.AuthStyle = p.Auth
+		default:
+			c.AuthStyle = model.AuthHeader
+		}
+	}
+	switch c.AuthStyle {
+	case model.AuthHeader:
+		if c.HeaderTemplate == "" {
+			if hasPreset && p.Auth == model.AuthHeader {
+				c.HeaderTemplate = p.Header
+			} else {
+				c.HeaderTemplate = preset.DefaultHeader(up.Profile)
+			}
+		}
+	case model.AuthBasic:
+		if hasPreset && p.UserPass && c.BasicUsername == "" {
+			c.SecretIsUserPass = true
+		}
+	}
+	return c
+}
+
 func checkAuth(c model.Credential) error {
 	switch c.AuthStyle {
 	case "", model.AuthHeader:
@@ -745,9 +826,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Name               string   `json:"name"`
 			Protocol           string   `json:"protocol"`
 			Profile            string   `json:"profile"`
+			Preset             string   `json:"preset"`
 			Host               string   `json:"host"`
 			Port               int      `json:"port"`
-			TLS                bool     `json:"tls"`
+			TLS                *bool    `json:"tls"`
 			InsecureSkipVerify bool     `json:"insecure_skip_verify"`
 			ServerName         string   `json:"server_name"`
 			PathAllowlist      []string `json:"path_allowlist"`
@@ -756,14 +838,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if !decode(w, r, &req) {
 			return
 		}
-		inject := true
-		if req.InjectUsage != nil {
-			inject = *req.InjectUsage
-		}
-		u, err := h.Service.CreateUpstream(r.Context(), model.Upstream{
-			Name: req.Name, Protocol: req.Protocol, Profile: req.Profile, Host: req.Host, Port: req.Port,
-			TLS: req.TLS, InsecureSkipVerify: req.InsecureSkipVerify, ServerName: req.ServerName,
-			PathAllowlist: req.PathAllowlist, InjectUsage: inject,
+		u, err := h.Service.CreateUpstreamFrom(r.Context(), UpstreamRequest{
+			Upstream: model.Upstream{
+				Name: req.Name, Protocol: req.Protocol, Profile: req.Profile, Preset: req.Preset, Host: req.Host, Port: req.Port,
+				InsecureSkipVerify: req.InsecureSkipVerify, ServerName: req.ServerName, PathAllowlist: req.PathAllowlist,
+			},
+			TLS: req.TLS, InjectUsage: req.InjectUsage,
 		}, actor, ip)
 		write(w, u, err)
 	case r.Method == http.MethodGet && r.URL.Path == "/v1/upstreams":
@@ -782,9 +862,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		if !decode(w, r, &req) {
 			return
-		}
-		if req.AuthStyle == "" {
-			req.AuthStyle = model.AuthHeader
 		}
 		c, err := h.Service.CreateCredential(r.Context(), model.Credential{
 			UpstreamID: req.UpstreamID, Name: req.Name, AuthStyle: req.AuthStyle, HeaderTemplate: req.HeaderTemplate,

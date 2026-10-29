@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"text/tabwriter"
 	"time"
 
 	"github.com/kirank55/keman/internal/adminclient"
@@ -26,6 +27,7 @@ import (
 	"github.com/kirank55/keman/internal/cryptoenc"
 	"github.com/kirank55/keman/internal/expiry"
 	"github.com/kirank55/keman/internal/money"
+	"github.com/kirank55/keman/internal/preset"
 	"github.com/kirank55/keman/internal/tui"
 )
 
@@ -512,8 +514,11 @@ func masterValue(path, env string) ([]byte, error) {
 
 func (c *cmd) upstream(args []string) int {
 	if len(args) == 0 {
-		fmt.Fprintln(c.stderr, "usage: keman upstream add|list")
+		fmt.Fprintln(c.stderr, "usage: keman upstream add|list|presets")
 		return 2
+	}
+	if args[0] == "presets" {
+		return c.presets()
 	}
 	api, err := c.api()
 	if err != nil {
@@ -530,9 +535,10 @@ func (c *cmd) upstream(args []string) int {
 		return c.printJSON(out)
 	case "add":
 		f := newFlags(args[1:])
+		presetName := f.str("preset")
 		body := map[string]any{
 			"name": f.str("name"), "profile": f.str("profile"), "host": f.str("host"),
-			"protocol": "http", "path_allowlist": f.list("path"),
+			"protocol": "http", "path_allowlist": f.list("path"), "preset": presetName,
 		}
 		if p := f.str("port"); p != "" {
 			n, err := strconv.Atoi(p)
@@ -542,7 +548,12 @@ func (c *cmd) upstream(args []string) int {
 			}
 			body["port"] = n
 		}
-		body["tls"] = f.bool("tls")
+		switch {
+		case f.bool("tls"):
+			body["tls"] = true
+		case f.bool("no-tls"):
+			body["tls"] = false
+		}
 		body["insecure_skip_verify"] = f.bool("insecure")
 		if sn := f.str("server-name"); sn != "" {
 			body["server_name"] = sn
@@ -554,8 +565,8 @@ func (c *cmd) upstream(args []string) int {
 			fmt.Fprintln(c.stderr, err.Error())
 			return 2
 		}
-		if body["name"] == "" || body["profile"] == "" || body["host"] == "" || body["port"] == nil {
-			fmt.Fprintln(c.stderr, "upstream add requires --name --profile --host --port")
+		if presetName == "" && (body["name"] == "" || body["profile"] == "" || body["host"] == "" || body["port"] == nil) {
+			fmt.Fprintln(c.stderr, "upstream add requires --preset, or --name --profile --host --port (keman upstream presets lists presets)")
 			return 2
 		}
 		var out any
@@ -565,9 +576,22 @@ func (c *cmd) upstream(args []string) int {
 		}
 		return c.printJSON(out)
 	default:
-		fmt.Fprintln(c.stderr, "usage: keman upstream add|list")
+		fmt.Fprintln(c.stderr, "usage: keman upstream add|list|presets")
 		return 2
 	}
+}
+
+func (c *cmd) presets() int {
+	tw := tabwriter.NewWriter(c.stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "PRESET\tPLATFORM\tHOST\tTRACKS\tKEY VARIABLE")
+	for _, p := range preset.All() {
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", p.Name, p.Title, p.Host, p.Tracking(), p.Env)
+	}
+	if err := tw.Flush(); err != nil {
+		return 1
+	}
+	fmt.Fprintln(c.stdout, "\nkeman upstream add --preset <name>  fills in the host, TLS and path allowlist. Any flag overrides it.")
+	return 0
 }
 
 func (c *cmd) credential(args []string) int {
@@ -614,12 +638,6 @@ func (c *cmd) credential(args []string) int {
 			return 1
 		}
 		body["upstream_id"] = id
-		if body["auth_style"] == "" {
-			body["auth_style"] = "header"
-		}
-		if body["auth_style"] == "header" && body["header_template"] == "" {
-			body["header_template"] = "Authorization: Bearer {key}"
-		}
 		var out any
 		if err := api.call(c.ctx, http.MethodPost, "/v1/credentials", body, &out); err != nil {
 			fmt.Fprintln(c.stderr, err.Error())
@@ -1088,7 +1106,7 @@ type flagSet struct {
 func newFlags(args []string) *flagSet {
 	f := &flagSet{seen: map[string][]string{}, bools: map[string]bool{}}
 	boolNames := map[string]bool{
-		"tls": true, "insecure": true, "no-inject-usage": true, "userpass": true, "yes": true,
+		"tls": true, "no-tls": true, "insecure": true, "no-inject-usage": true, "userpass": true, "yes": true,
 		"no-expiry": true, "strict": true, "history": true, "json": true,
 		"learned": true, "expect-disable": true, "list": true, "live": true,
 	}
@@ -1200,9 +1218,12 @@ Find and contain leaks
 Set up
   keman init
   keman serve
+  keman upstream presets                       platforms with a ready-made upstream
+  keman upstream add --preset groq             host, TLS and path allowlist from the preset
   keman upstream add --name openai --profile openai --host api.openai.com --port 443 --tls
   keman upstream add --name stripe --profile generic --host api.stripe.com --port 443 --tls --path "POST /v1/charges"
   keman upstream list
+  keman credential add --upstream groq --name primary --secret-env GROQ_API_KEY    auth header from the preset
   keman credential add --upstream openai --name primary --header "Authorization: Bearer {key}" --secret-file ./secret
   keman credential list
   keman credential rotate <id-or-name> --secret-env OPENAI_API_KEY

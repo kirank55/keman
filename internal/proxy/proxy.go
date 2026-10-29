@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -86,7 +87,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if ip != nil {
 		ipStr = ip.String()
 	}
-	token := presentedKey(r)
+	token, carrier := presentedKey(r)
 	id, secret, err := keyfmt.Parse(token)
 	if err != nil {
 		p.rejectUnauth(w, r, ipStr, start, "invalid_key")
@@ -224,13 +225,13 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	var reservation int64
 	if profile.IsLLM(up.Profile) && meta.HasModel && p.Prices != nil {
-		if _, known := p.Prices.Lookup(meta.Model); !known {
+		if _, known := p.Prices.Lookup(up.Preset, meta.Model); !known {
 			if hasCap {
 				p.failEvent(w, evBase, "unknown_model_price", start)
 				return
 			}
 		} else if hasCap {
-			reservation, _ = p.Prices.Reserve(meta.Model, int64(len(body)), meta.MaxTokens, p.DefaultReservation)
+			reservation, _ = p.Prices.Reserve(up.Preset, meta.Model, int64(len(body)), meta.MaxTokens, p.DefaultReservation)
 			if !p.State.Reserve(key.ID, reservation, start) {
 				p.failEvent(w, evBase, "spend_cap_reached", start)
 				return
@@ -260,6 +261,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			out.URL.RawQuery = r.URL.RawQuery
 			out.Host = target.Host
 			out.Header = headers.Sanitize(out.Header)
+			out.Header.Del(carrier)
 			// A nil slice tells ReverseProxy not to append the peer address.
 			out.Header["X-Forwarded-For"] = nil
 			applyAuth(out, cred)
@@ -301,7 +303,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				var cost int64
 				ok := false
 				if p.Prices != nil {
-					cost, ok = p.Prices.Cost(meta.Model, result.Input, result.Output, result.Cached, result.CacheWrite, result.InputIncludesCached)
+					cost, ok = p.Prices.Cost(up.Preset, meta.Model, result.Input, result.Output, result.Cached, result.CacheWrite, result.InputIncludesCached)
 				}
 				if !ok {
 					p.State.Reconcile(key.ID, reservation, reservation, start)
@@ -336,7 +338,7 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		evBase.CacheWriteTokens = result.CacheWrite
 		evBase.CostEstimated = false
 		if p.Prices != nil {
-			if cost, ok := p.Prices.Cost(meta.Model, result.Input, result.Output, result.Cached, result.CacheWrite, result.InputIncludesCached); ok {
+			if cost, ok := p.Prices.Cost(up.Preset, meta.Model, result.Input, result.Output, result.Cached, result.CacheWrite, result.InputIncludesCached); ok {
 				evBase.CostMicro = &cost
 			}
 		}
@@ -467,15 +469,60 @@ func (p *Proxy) transport(up model.Upstream) http.RoundTripper {
 	return tr
 }
 
-func presentedKey(r *http.Request) string {
-	h := r.Header.Get("Authorization")
-	if len(h) >= 7 && strings.EqualFold(h[:7], "bearer ") {
-		return strings.TrimSpace(h[7:])
+// presentedKey finds the virtual key and the header that carried it, which
+// must not be forwarded. Authorization may hold it as Bearer, as GitHub's
+// "token" scheme, bare, or in HTTP Basic as the username or the password.
+// SDKs that send their key in a provider header, such as
+// X-Postmark-Server-Token, are found by the kmn_ prefix.
+func presentedKey(r *http.Request) (token, carrier string) {
+	h := strings.TrimSpace(r.Header.Get("Authorization"))
+	if v := fromAuthorization(h); strings.HasPrefix(v, keyfmt.Prefix) {
+		return v, "Authorization"
 	}
-	if v := r.Header.Get("X-Api-Key"); v != "" {
-		return strings.TrimSpace(v)
+	if v := strings.TrimSpace(r.Header.Get("X-Api-Key")); strings.HasPrefix(v, keyfmt.Prefix) {
+		return v, "X-Api-Key"
 	}
-	return strings.TrimSpace(h)
+	names := make([]string, 0, len(r.Header))
+	for name := range r.Header {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		if name == "Authorization" || name == "X-Api-Key" {
+			continue
+		}
+		v := strings.TrimSpace(r.Header.Get(name))
+		if len(v) >= 7 && strings.EqualFold(v[:7], "bearer ") {
+			v = strings.TrimSpace(v[7:])
+		}
+		if strings.HasPrefix(v, keyfmt.Prefix) {
+			return v, name
+		}
+	}
+	return fromAuthorization(h), "Authorization"
+}
+
+func fromAuthorization(h string) string {
+	scheme, rest, ok := strings.Cut(h, " ")
+	if !ok {
+		return h
+	}
+	rest = strings.TrimSpace(rest)
+	switch strings.ToLower(scheme) {
+	case "bearer", "token":
+		return rest
+	case "basic":
+		raw, err := base64.StdEncoding.DecodeString(rest)
+		if err != nil {
+			return ""
+		}
+		user, pass, _ := strings.Cut(string(raw), ":")
+		if strings.HasPrefix(pass, keyfmt.Prefix) {
+			return pass
+		}
+		return user
+	}
+	return h
 }
 
 func readLimited(body io.Reader, max int64) ([]byte, error) {

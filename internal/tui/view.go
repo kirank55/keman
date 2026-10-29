@@ -1448,29 +1448,38 @@ func (m model) renderPolicy() string {
 
 var upstreamHints = []string{
 	"A label for this upstream.",
-	"openai and anthropic track tokens and spend. generic needs a path list.",
+	"←/→ picks a platform, which fills in the fields below. custom lets you type them.",
 	"Host name only, without https://.",
 	"Usually 443.",
 	"TLS to the upstream. Leave on for public APIs.",
-	"Comma separated, such as POST /v1/chat/completions. * is one segment, ** the rest. Empty uses the profile's built-in list.",
+	"Comma separated, such as POST /v1/chat/completions. * is one segment, ** the rest. Empty uses the platform's list.",
 }
 
 func (m model) renderUpstream() string {
-	profile := upstreamProfiles[0]
-	if m.upProfile >= 0 && m.upProfile < len(upstreamProfiles) {
-		profile = upstreamProfiles[m.upProfile]
+	choice := upstreamChoices[0]
+	if m.upProfile >= 0 && m.upProfile < len(upstreamChoices) {
+		choice = upstreamChoices[m.upProfile]
 	}
 	tls := "off"
 	if m.upTLS {
 		tls = "on"
 	}
 	hint := upstreamHints[m.upField]
-	if m.upField == 0 || m.upField == 2 {
-		hint += " OpenRouter is only a suggestion; every field is editable."
+	switch {
+	case m.upField == 1 && choice.preset != "":
+		if choice.profile == "generic" {
+			hint += " Keman counts requests on this platform."
+		} else {
+			hint += " Keman tracks tokens and spend on this platform."
+		}
+	case m.upField == 1 && choice.profile == "generic":
+		hint += " generic needs a path list."
+	case (m.upField == 0 || m.upField == 2) && choice.preset != "":
+		hint += " " + choice.label + " is only a suggestion; every field is editable."
 	}
 	return m.form("add upstream", []string{
 		fieldLine(m.upField == 0, "name", m.upName.View(), false),
-		fieldLine(m.upField == 1, "profile", profile, true),
+		fieldLine(m.upField == 1, "platform", choice.label, true),
 		fieldLine(m.upField == 2, "host", m.upHost.View(), false),
 		fieldLine(m.upField == 3, "port", m.upPort.View(), false),
 		fieldLine(m.upField == 4, "tls", tls, true),
