@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Not found · Keman</title>
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    .lost { min-height: 100vh; display: grid; place-content: center; justify-items: center; gap: 22px; text-align: center; padding: 24px; }
+    .lost .win { width: min(560px, calc(100vw - 48px)); }
+    .lost .term { white-space: pre-wrap; font-size: 14px; }
+  </style>
+</head>
+<body>
+<main class="lost">
+  <a class="brand" href="/"><img src="/logo.svg" alt="" width="30" height="30">KEMAN</a>
+  <div class="win">
+    <div class="bar"><i></i><i></i><i></i><span>request through Keman</span></div>
+    <pre class="term"><span class="h-method">GET</span> <span id="path">/this-page</span>
+
+<span class="h-bad">HTTP/1.1 404 Not Found</span>
+
+{"error": {"message": "There’s nothing at this path."}}</pre>
+  </div>
+  <a class="btn" href="/">Back to the home page</a>
+</main>
+<script>document.getElementById('path').textContent = location.pathname</script>
+</body>
+</html>

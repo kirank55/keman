@@ -1,12 +1,13 @@
 // Render every HTML page in a directory to a PNG at 2x with headless
-// Chromium (Playwright). Usage: node render.mjs HTML_DIR OUT_DIR
+// Chromium (Playwright). Usage: node render.mjs HTML_DIR OUT_DIR [WIDTH HEIGHT]
+// The viewport is 1270x760 (the gallery size) unless WIDTH and HEIGHT are given.
 import { chromium } from 'playwright';
 import { readdirSync } from 'node:fs';
 import { join, resolve, basename } from 'node:path';
 
-const [, , htmlDir, outDir] = process.argv;
+const [, , htmlDir, outDir, width = 1270, height = 760] = process.argv;
 const browser = await chromium.launch();
-const page = await browser.newPage({ viewport: { width: 1270, height: 760 }, deviceScaleFactor: 2 });
+const page = await browser.newPage({ viewport: { width: +width, height: +height }, deviceScaleFactor: 2 });
 for (const f of readdirSync(htmlDir).filter((f) => f.endsWith('.html')).sort()) {
   await page.goto('file://' + resolve(htmlDir, f));
   await page.evaluate(async () => {

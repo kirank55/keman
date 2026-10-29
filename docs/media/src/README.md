@@ -11,6 +11,13 @@ mkdir -p .media-cache/render && cp docs/media/src/render.mjs .media-cache/render
 node .media-cache/render/render.mjs .demo/gallery-html docs/media/producthunt
 ```
 
+The website uses the same captures, plus `requests.json`, the proxy's real answers to a valid key and to leaked copies, which `capture.sh` records with `requests.py`. To refresh the website's terminals, alert cards, HTTP exchanges and social card:
+
+```sh
+python3 docs/media/src/website.py .demo/shots .media-cache/fonts .demo/og-html
+node .media-cache/render/render.mjs .demo/og-html website 1200 630
+```
+
 `.media-cache/fonts` must hold `JetBrainsMono-Regular.woff2` and `JetBrainsMono-Bold.woff2` ([JetBrains Mono](https://github.com/JetBrains/JetBrainsMono/releases)) and `InterVariable.woff2` ([Inter](https://github.com/rsms/inter/releases)). Both are under the SIL Open Font License.
 
 | File | Shows |
@@ -19,3 +26,5 @@ node .media-cache/render/render.mjs .demo/gallery-html docs/media/producthunt
 | `ansi2html.py` | Turns the captures into HTML with the xterm-256 palette |
 | `build.py` | Lays out each image: headline, explanation, terminal or alert card |
 | `render.mjs` | Fits each terminal's font to its space and screenshots with Chromium |
+| `requests.py` | Sends a valid key and leaked copies through the demo proxy and records the real responses |
+| `website.py` | Fills the website's terminals, alert cards and HTTP exchanges, and lays out its social card |
