@@ -5,7 +5,7 @@
 <h1 align="center">Keman</h1>
 
 <p align="center">
-  <b>Your API keys will leak. Make the leaked copy worthless.</b><br>
+  <b>Open-source protection from leaked API keys.</b><br>
   A self-hosted proxy that keeps your real API keys and hands apps virtual ones you can lock, watch, and kill.
 </p>
 
