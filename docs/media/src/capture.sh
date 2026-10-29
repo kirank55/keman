@@ -2,7 +2,7 @@
 # Capture the raw material for the gallery images: the terminal UI and CLI
 # sessions as ANSI text (tmux capture-pane -e), and the alerts Keman sent.
 # Run from the repo root. Needs tmux, git and python3. Seeds .demo/ again.
-# COLORFGBG tells the UI the terminal is light, so it uses its light palette.
+# COLORFGBG tells the UI the terminal is dark, so it uses its dark palette.
 #
 #   docs/media/src/capture.sh [OUT]     (default OUT: .demo/shots)
 set -eu
@@ -46,7 +46,7 @@ keys() { tmux send-keys -t "$S" "$@"; sleep 0.4; }
 tui() { # tui COLS ROWS: a fresh UI session on the demo install
   tmux kill-session -t "$S" 2>/dev/null || true
   tmux new-session -d -s "$S" -x "$1" -y "$2" \
-    "cd '$ROOT' && KEMAN_ADMIN_TOKEN='$TOKEN' TERM=xterm-256color COLORFGBG='0;15' '$D/keman' --config '$D/keman.yaml'"
+    "cd '$ROOT' && KEMAN_ADMIN_TOKEN='$TOKEN' TERM=xterm-256color COLORFGBG='15;0' '$D/keman' --config '$D/keman.yaml'"
   wait_for "q quit"
 }
 open_key() { # open_key NAME: filter the key list to NAME and open it
@@ -63,7 +63,7 @@ keys 2
 wait_for "enter open key"
 grab detections
 
-tui 124 26
+tui 120 26
 open_key support-bot
 grab detail-support-bot
 
@@ -84,8 +84,8 @@ done
 shell() { # shell DIR COLS ROWS
   tmux kill-session -t "$S" 2>/dev/null || true
   tmux new-session -d -s "$S" -x "$2" -y "$3" -c "$1" \
-    "env -i HOME='$HOME' PATH='$D/bin:/usr/bin:/bin' TERM=xterm-256color COLORFGBG='0;15' KEMAN_ADMIN_TOKEN='$TOKEN' \
-     PS1='\[\e[38;5;27m\]\W\[\e[0m\] \[\e[38;5;242m\]\$\[\e[0m\] ' bash --norc --noprofile"
+    "env -i HOME='$HOME' PATH='$D/bin:/usr/bin:/bin' TERM=xterm-256color COLORFGBG='15;0' KEMAN_ADMIN_TOKEN='$TOKEN' \
+     PS1='\[\e[38;5;75m\]\W\[\e[0m\] \[\e[38;5;245m\]\$\[\e[0m\] ' bash --norc --noprofile"
   sleep 0.6
   tmux send-keys -t "$S" clear Enter
   sleep 0.3
