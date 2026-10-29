@@ -523,3 +523,32 @@ func TestInvalidKeyDoesNotRegisterSecret(t *testing.T) {
 		t.Fatalf("invalid key was stored for redaction (%d)", secrets.Len())
 	}
 }
+
+func TestPathAllowlistRejectsDotSegmentsAndEncodedSlashes(t *testing.T) {
+	var reached []string
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reached = append(reached, r.URL.EscapedPath())
+		_, _ = io.WriteString(w, `{}`)
+	}))
+	defer up.Close()
+	h := newHarness(t, up.URL, "generic", []string{"GET /v1/customers/*", "GET /v1/files/**"})
+	for _, p := range []string{
+		"/v1/customers/..",
+		"/v1/files/../charges",
+		"/v1/files/./x",
+		"/v1/files/%2e%2e/charges",
+		"/v1/files/a%2F..%2F..%2Fcharges",
+		"/v1/files/a%5C..%5Ccharges",
+	} {
+		resp := h.do(t, http.MethodGet, p, "", nil)
+		if resp.StatusCode != http.StatusForbidden || resp.Header.Get("X-Keman-Error") != "path_not_allowed" {
+			t.Errorf("%s: %d %q", p, resp.StatusCode, resp.Header.Get("X-Keman-Error"))
+		}
+	}
+	if len(reached) != 0 {
+		t.Fatalf("upstream received %v", reached)
+	}
+	if resp := h.do(t, http.MethodGet, "/v1/files/file-abc/content", "", nil); resp.StatusCode != 200 {
+		t.Fatalf("legit path %d", resp.StatusCode)
+	}
+}

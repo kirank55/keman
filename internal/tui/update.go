@@ -1766,9 +1766,53 @@ func (m model) visibleKeys() []Key {
 }
 
 func (m model) visibleDets() []Detection {
-	return filterBy(m.dets, m.filters[screenDetections], func(d Detection) string {
+	return groupDetections(filterBy(m.dets, m.filters[screenDetections], func(d Detection) string {
 		return d.Rule + " " + d.KeyID + " " + d.Severity
-	})
+	}))
+}
+
+// detectionGroupWindow matches the engine's incident window: a rule that
+// fires again on the same key within an hour is the same incident.
+const detectionGroupWindow = time.Hour
+
+// groupDetections folds detections of one rule on one key that fire within
+// detectionGroupWindow of each other into one row with a count, so a burst
+// of abusive requests reads as one incident. Rows keep the position of
+// their first detection and show the latest time.
+func groupDetections(ds []Detection) []Detection {
+	type groupKey struct{ key, rule, sev string }
+	out := make([]Detection, 0, len(ds))
+	open := map[groupKey]int{}
+	span := map[groupKey][2]time.Time{}
+	for _, d := range ds {
+		k := groupKey{d.KeyID, d.Rule, d.Severity}
+		n := d.Count
+		if n < 1 {
+			n = 1
+		}
+		if i, ok := open[k]; ok {
+			sp := span[k]
+			if !d.Time.Before(sp[0].Add(-detectionGroupWindow)) && !d.Time.After(sp[1].Add(detectionGroupWindow)) {
+				out[i].Count += n
+				if d.Time.After(out[i].Time) {
+					out[i].Time = d.Time
+				}
+				if d.Time.Before(sp[0]) {
+					sp[0] = d.Time
+				}
+				if d.Time.After(sp[1]) {
+					sp[1] = d.Time
+				}
+				span[k] = sp
+				continue
+			}
+		}
+		d.Count = n
+		open[k] = len(out)
+		span[k] = [2]time.Time{d.Time, d.Time}
+		out = append(out, d)
+	}
+	return out
 }
 
 func (m model) visibleAudits() []AuditRow {

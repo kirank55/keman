@@ -369,9 +369,6 @@ func (p *Proxy) rejectUnauth(w http.ResponseWriter, r *http.Request, ip string, 
 }
 
 func (p *Proxy) failEvent(w http.ResponseWriter, ev model.Event, code string, start time.Time) {
-	if code == "rate_limited" {
-		// Retry-After is set by the caller when it knows the delay.
-	}
 	apierr.Fail(w, code)
 	ev.Status = apierr.Status(code)
 	ev.BlockedCode = code

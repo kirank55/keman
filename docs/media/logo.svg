@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Keman">
+  <rect width="256" height="256" rx="56" fill="#111114"/>
+  <!-- shield -->
+  <path d="M128 40 L196 64 V122 C196 166 167 199 128 216 C89 199 60 166 60 122 V64 Z"
+        fill="none" stroke="#FFFFFF" stroke-width="14" stroke-linejoin="round"/>
+  <!-- keyhole -->
+  <circle cx="128" cy="112" r="20" fill="#FFFFFF"/>
+  <path d="M119 124 H137 L143 164 H113 Z" fill="#FFFFFF"/>
+</svg>

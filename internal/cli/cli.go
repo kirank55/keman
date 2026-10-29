@@ -57,7 +57,7 @@ func Run(ctx context.Context, args []string, getenv func(string) string, stdin i
 		return c.tui()
 	}
 	switch rest[0] {
-	case "version":
+	case "version", "-v", "--version":
 		fmt.Fprintln(stdout, Version)
 		return 0
 	case "help", "-h", "--help":

@@ -1011,10 +1011,69 @@ func TestLastFieldFooterSaysSave(t *testing.T) {
 }
 
 func TestUSDHasCents(t *testing.T) {
-	for micro, want := range map[int64]string{0: "$0.00", 1_500_000: "$1.50", 420_000: "$0.42", 1_500: "$0.0015", 20_000_000: "$20.00"} {
+	for micro, want := range map[int64]string{
+		0: "$0.00", 1_500_000: "$1.50", 420_000: "$0.42", 1_500: "$0.0015", 20_000_000: "$20.00",
+		449_615: "$0.45", 18_935: "$0.02", 13_903_123: "$13.90", 9_999: "$0.01", 600: "$0.0006",
+		10: "< $0.0001", 1_234_567_890: "$1,234.57", -2_500_000: "-$2.50",
+	} {
 		if got := usd(micro); got != want {
 			t.Errorf("usd(%d) = %q, want %q", micro, got, want)
 		}
+	}
+}
+
+func TestThousands(t *testing.T) {
+	for n, want := range map[int64]string{0: "0", 999: "999", 1000: "1,000", 7367481: "7,367,481", -1234: "-1,234"} {
+		if got := thousands(n); got != want {
+			t.Errorf("thousands(%d) = %q, want %q", n, got, want)
+		}
+	}
+}
+
+func TestGroupDetections(t *testing.T) {
+	t0 := time.Date(2026, 10, 28, 15, 0, 0, 0, time.UTC)
+	at := func(min int) time.Time { return t0.Add(time.Duration(min) * time.Minute) }
+	in := []Detection{
+		{Time: at(0), KeyID: "a", Rule: "spend_spike", Severity: "high"},
+		{Time: at(0), KeyID: "a", Rule: "new_country", Severity: "medium"},
+		{Time: at(1), KeyID: "a", Rule: "spend_spike", Severity: "high"},
+		{Time: at(1), KeyID: "b", Rule: "spend_spike", Severity: "high"},
+		{Time: at(30), KeyID: "a", Rule: "spend_spike", Severity: "high"},
+		{Time: at(200), KeyID: "a", Rule: "spend_spike", Severity: "high"},
+	}
+	got := groupDetections(in)
+	want := []struct {
+		key, rule string
+		count     int
+		last      time.Time
+	}{
+		{"a", "spend_spike", 3, at(30)},
+		{"a", "new_country", 1, at(0)},
+		{"b", "spend_spike", 1, at(1)},
+		{"a", "spend_spike", 1, at(200)},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %d rows: %+v", len(got), got)
+	}
+	for i, w := range want {
+		if got[i].KeyID != w.key || got[i].Rule != w.rule || got[i].Count != w.count || !got[i].Time.Equal(w.last) {
+			t.Errorf("row %d = %+v, want %+v", i, got[i], w)
+		}
+	}
+}
+
+func TestDetectionsTabGroupsRepeats(t *testing.T) {
+	m := sample(&fakeAPI{})
+	m.screen = screenDetections
+	m.dets = nil
+	now := time.Now()
+	for i := 0; i < 12; i++ {
+		m.dets = append(m.dets, Detection{Time: now, KeyID: "abcd1234", Rule: "spend_spike", Severity: "high"})
+	}
+	m.loaded[screenDetections] = true
+	view := m.View()
+	if !strings.Contains(view, "spend_spike ×12") || strings.Count(view, "spend_spike") != 1 {
+		t.Fatal(view)
 	}
 }
 

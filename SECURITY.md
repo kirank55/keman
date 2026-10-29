@@ -23,9 +23,23 @@ Open a private security advisory on the GitHub repository, or contact the mainta
 
 - Forward a virtual key, `Authorization`, `X-Api-Key`, `X-Forwarded-*`, or `Forwarded` to the upstream.
 - Honor `X-Forwarded-For` from a peer that is not in `trusted_proxies` (empty by default).
+- Forward a path with `.` or `..` segments (also `..;`), backslashes, or control characters. The upstream could resolve it to an endpoint the path allowlist refuses, so it is answered with `path_not_allowed`.
 - Follow a redirect whose host or port is not the configured upstream.
 - Use `HTTP_PROXY` for upstream connections.
 - Serve the admin API or `/metrics` without the admin token.
+
+## Verifying a release
+
+Every release binary has a `.sha256` sum, an SPDX SBOM (`.spdx.json`), and a keyless cosign bundle (`.bundle`) signed by the release workflow. `scripts/install.sh` always checks the sum, and checks the signature when `cosign` is installed. To check one by hand:
+
+```sh
+cosign verify-blob --bundle keman_linux_amd64.bundle \
+  --certificate-identity-regexp '^https://github.com/kirank55/keman/\.github/workflows/release\.yml@' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  keman_linux_amd64
+```
+
+The container image `ghcr.io/kirank55/keman` is signed the same way: `cosign verify` with the same identity and issuer.
 
 See [docs/THREAT-MODEL.md](docs/THREAT-MODEL.md) and [docs/ASSUMPTIONS.md](docs/ASSUMPTIONS.md).
 

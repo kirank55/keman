@@ -33,6 +33,18 @@ func TestHelpAndUnknownCommand(t *testing.T) {
 	}
 }
 
+func TestVersionFlags(t *testing.T) {
+	for _, arg := range []string{"version", "--version", "-v"} {
+		var stdout, stderr bytes.Buffer
+		if code := Run(context.Background(), []string{arg}, nil, nil, &stdout, &stderr); code != 0 {
+			t.Fatalf("%s: code %d %s", arg, code, stderr.String())
+		}
+		if strings.TrimSpace(stdout.String()) != Version {
+			t.Fatalf("%s: %q", arg, stdout.String())
+		}
+	}
+}
+
 func TestConfigFlagAfterCommand(t *testing.T) {
 	dir := t.TempDir()
 	cfg := filepath.Join(dir, "keman.yaml")

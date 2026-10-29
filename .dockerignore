@@ -1,0 +1,13 @@
+.git
+.github
+.quickstart
+.tui-try
+bin
+dist
+website
+*.db
+*.db-wal
+*.db-shm
+master.key
+keman.yaml
+keman.log
