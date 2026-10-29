@@ -1,6 +1,7 @@
 #!/bin/sh
-# Capture the raw material for the gallery images: the terminal UI and CLI
-# sessions as ANSI text (tmux capture-pane -e), and the alerts Keman sent.
+# Capture the raw material for the gallery images and the website: the
+# terminal UI and CLI sessions as ANSI text (tmux capture-pane -e), the alerts
+# Keman sent, and the proxy's answers to leaked keys (requests.py).
 # Run from the repo root. Needs tmux, git and python3. Seeds .demo/ again.
 # COLORFGBG tells the UI the terminal is dark, so it uses its dark palette.
 #
@@ -133,4 +134,10 @@ run "keman key rotate support-bot --grace 0"
 grab rotate
 
 cp "$D/alerts.jsonl" "$OUT/alerts.jsonl"
+
+# Real responses to a valid key and to leaked copies, for the website. This
+# runs its own server, so stop ours first.
+kill "$SERVE_PID" 2>/dev/null || true
+wait "$SERVE_PID" 2>/dev/null || true
+python3 docs/media/src/requests.py "$OUT/requests.json" > /dev/null
 echo "captured into $OUT"

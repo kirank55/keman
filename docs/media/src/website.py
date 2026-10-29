@@ -4,11 +4,13 @@ Usage: python3 docs/media/src/website.py SHOTS_DIR [FONTS_DIR OG_HTML_DIR]
 
 Every <pre data-capture="NAME"> gets NAME.ans as colored HTML and --cols set
 to its widest line. Every element with data-alert="RULE [KEY]" gets the text
-of that Slack alert. The page stays plain HTML, so website/ can be hosted as
+of that Slack alert. Every <pre data-request="ID"> gets the HTTP exchange that
+requests.py recorded for scenario ID in SHOTS_DIR/requests.json. The page stays plain HTML, so website/ can be hosted as
 is. With FONTS_DIR and OG_HTML_DIR (as for build.py), also write og.html
 there for render.mjs to shoot as website/og.png.
 """
 import html
+import json
 import os
 import re
 import sys
@@ -22,6 +24,57 @@ SITE = os.path.join(ROOT, "website")
 
 PRE = re.compile(r'<pre class="term" data-capture="([\w-]+)"[^>]*>.*?</pre>', re.S)
 ALERT = re.compile(r'(<div class="text" data-alert="([^"]+)">).*?(</div>)', re.S)
+REQUEST = re.compile(r'(<pre class="term http" data-request="([\w-]+)">).*?(</pre>)', re.S)
+REASONS = {200: "OK", 401: "Unauthorized", 403: "Forbidden", 429: "Too Many Requests"}
+
+
+def span(cls, text):
+    return f'<span class="{cls}">{html.escape(text)}</span>'
+
+
+def js(value, indent=0, inline=False):
+    """JSON as colored HTML. Objects and arrays stay on one line when they fit in
+    74 columns (and always when inline); the top-level object is always expanded."""
+    flat = json.dumps(value, ensure_ascii=False)
+    expand = not inline and (indent == 0 and isinstance(value, dict) or len(flat) + 2 * indent > 74)
+    if isinstance(value, (dict, list)) and value and expand:
+        pad = "  " * (indent + 1)
+        if isinstance(value, dict):
+            items = [f"{span('j-key', json.dumps(k))}: {js(v, indent + 1)}" for k, v in value.items()]
+            o, c = "{", "}"
+        else:
+            items = [js(v, indent + 1) for v in value]
+            o, c = "[", "]"
+        return o + "\n" + ",\n".join(pad + i for i in items) + "\n" + "  " * indent + c
+    if isinstance(value, dict):
+        return "{" + ", ".join(f"{span('j-key', json.dumps(k))}: {js(v, inline=True)}" for k, v in value.items()) + "}"
+    if isinstance(value, list):
+        return "[" + ", ".join(js(v, inline=True) for v in value) + "]"
+    if isinstance(value, str):
+        return span("j-str", json.dumps(value, ensure_ascii=False))
+    if isinstance(value, bool) or value is None:
+        return span("j-lit", json.dumps(value))
+    return span("j-num", json.dumps(value))
+
+
+def exchange(r):
+    """One recorded request and Keman's response, as an HTTP transcript."""
+    where = f"{r['ip']} ({r['country']}, AS{r['asn']})"
+    auth = f"Bearer {r['token']}" if r["auth"] == "Authorization" else r["token"]
+    status = r["status"]
+    lines = [
+        span("h-dim", f"# {r['key']}, called from {where}"),
+        f"{span('h-method', r['method'])} {html.escape(r['path'])}",
+        f"{span('h-hdr', r['auth'] + ':')} {html.escape(auth)}",
+        "",
+        js(r["body"], inline=True),
+        "",
+        span("h-ok" if status < 300 else "h-bad", f"HTTP/1.1 {status} {REASONS.get(status, '')}".rstrip()),
+    ]
+    if r["error_header"]:
+        lines.append(f"{span('h-hdr', 'X-Keman-Error:')} {span('h-err', r['error_header'])}")
+    lines += ["", js(r["response"])]
+    return "\n".join(lines)
 
 
 def fill(shots):
@@ -38,11 +91,17 @@ def fill(shots):
         rule, _, key = m.group(2).partition(" ")
         return m.group(1) + html.escape(find_alert(shots, rule, key or None)) + m.group(3)
 
+    requests = json.load(open(os.path.join(shots, "requests.json"), encoding="utf-8"))
+
+    def request(m):
+        return m.group(1) + exchange(requests[m.group(2)]) + m.group(3)
+
     page, n = PRE.subn(pre, page)
     page, k = ALERT.subn(alert, page)
+    page, r = REQUEST.subn(request, page)
     with open(path, "w", encoding="utf-8") as f:
         f.write(page)
-    print(f"{path}: {n} terminals, {k} alerts")
+    print(f"{path}: {n} terminals, {k} alerts, {r} requests")
 
 
 def og(shots, fonts, out):
