@@ -15,15 +15,9 @@ The Keman landing page. It is static HTML, CSS and a little JavaScript, with no 
 
 The page works without JavaScript: the simulator shows its first exchange, the story shows each step with its visual inline, and nothing is hidden. It respects `prefers-reduced-motion`, and the tabs follow the WAI-ARIA tabs pattern (arrow keys, Home and End).
 
-## Before you publish
+## Publishing
 
-1. Set the absolute URL of `og.png` in `index.html`. Link previews on X, LinkedIn and Slack need an absolute URL:
-
-   ```html
-   <meta property="og:image" content="https://YOUR-DOMAIN/og.png">
-   ```
-
-   Add `<meta property="og:url" content="https://YOUR-DOMAIN/">` and `<link rel="canonical" href="https://YOUR-DOMAIN/">` too, and a `Sitemap:` line in `robots.txt` if you add a sitemap.
+1. The site is published at https://keman.pages.dev. `og:image`, `twitter:image`, `og:url` and the canonical link in `index.html` use that address, because link previews on X, LinkedIn and Slack need absolute URLs. Change all four if the domain changes.
 2. `404.html` uses root-relative paths (`/style.css`). If the site lives under a subpath, such as `user.github.io/keman/`, change them to that path.
 3. On launch day, paste the Product Hunt badge embed code where `index.html` has the `Product Hunt badge` comment.
 4. Add the site URL to the GitHub repo's About box, and to the Product Hunt post.

@@ -10,19 +10,29 @@ Keman
 
 Pick one:
 
-1. **Make leaked API keys worthless** (30), the recommended one
-2. Open-source protection from leaked API keys (43)
-3. Virtual API keys you can lock, watch, and kill (46)
+1. **Self-hosted proxy that makes leaked API keys worthless** (54), the recommended one: it names what Keman is and what it does for you
+2. Make leaked API keys worthless (30), punchier, and leaves the explaining to the description
+3. Open-source protection from leaked API keys (43)
 
 ## Description (260 characters max)
 
-> Keman is a self-hosted proxy that keeps your real API keys and gives apps virtual ones. A leaked copy only works from addresses you allow, expires on its own, sets off an alert with the exact fix, and dies in one command. Free, open source, one Go binary.
+Pick one. The first is the recommended one: it tells the story the gallery shows, and leads straight into the "Try a leaked key" simulator on the website.
 
-(255 characters)
+1. **The thief's view** (258)
+
+   > Someone finds your OpenAI key on GitHub. They try it from Brazil: refused. A pricier model: refused. Meanwhile Slack tells you who, where, and the one command to kill it. Keman gives apps virtual keys, so a leaked one is worthless. Open source & self-hosted.
+
+2. **The leak already happened** (256)
+
+   > Your API key just leaked. With Keman, that's fine. Apps only ever hold a virtual key, so the leaked copy is locked to your IPs, expires on its own, pings Slack when a stranger uses it, and dies in one command. Your real key never moves. Free & open source.
+
+3. **What you get** (255)
+
+   > Stop handing apps your real API keys. Keman gives each app a virtual key you can lock to IPs and countries, cap in dollars, expire, watch, and kill in one command. Decoy keys catch thieves. 21 platforms incl. OpenAI, Anthropic & Stripe. Free, self-hosted.
 
 ## Links
 
-- Website: your hosted `website/`
+- Website: https://keman.pages.dev
 - GitHub: https://github.com/kirank55/keman
 
 ## Topics
