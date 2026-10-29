@@ -12,3 +12,4 @@
 .tui-try/
 .demo/
 .media-cache/
+__pycache__/

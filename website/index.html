@@ -1,0 +1,493 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Keman: open-source protection from leaked API keys</title>
+  <meta name="description" content="Keman is a self-hosted proxy that keeps your real API keys and hands apps virtual ones you can lock, watch, and kill. Free and open source.">
+  <meta name="theme-color" content="#ffffff">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Keman: open-source protection from leaked API keys">
+  <meta property="og:description" content="Apps get virtual keys. The real key never leaves Keman, so a leaked copy is locked, watched, and killed in one command.">
+  <meta property="og:image" content="og.png">
+  <meta property="og:image:width" content="2400">
+  <meta property="og:image:height" content="1260">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap nav-row">
+    <a class="brand" href="#top" aria-label="Keman home"><img src="logo.svg" alt="" width="30" height="30">KEMAN</a>
+    <nav class="links">
+      <a href="#how">How it works</a>
+      <a href="#features">Features</a>
+      <a href="#install">Install</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+    <a class="btn btn-small" href="https://github.com/kirank55/keman">GitHub</a>
+  </div>
+</header>
+
+<main id="top">
+
+  <section class="hero wrap">
+    <p class="eyebrow"><span class="dot"></span>Public beta · Free and open source</p>
+    <h1>Open-source protection from leaked&nbsp;API&nbsp;keys</h1>
+    <p class="lede">Apps get virtual keys. The real key never leaves Keman, so a leaked copy is locked, watched, and killed in one command.</p>
+
+    <div class="cmd" data-copy="curl -fsSL https://raw.githubusercontent.com/kirank55/keman/main/scripts/install.sh | sh">
+      <code><span class="prompt">$</span> curl -fsSL https://raw.githubusercontent.com/kirank55/keman/main/scripts/install.sh | sh</code>
+      <button type="button" class="copy" aria-label="Copy install command">Copy</button>
+    </div>
+
+    <div class="cta-row">
+      <a class="btn" href="https://github.com/kirank55/keman">Get Keman on GitHub →</a>
+      <a class="btn btn-ghost" href="#try">Try the demo</a>
+    </div>
+    <p class="meta">One Go binary · Linux, macOS and Windows · Apache-2.0 · No account, no telemetry</p>
+
+    <div class="win hero-win">
+      <div class="bar"><i></i><i></i><i></i><span>keman</span></div>
+      <pre class="term" data-capture="keys" style="--cols:118"><span style="font-weight:700">keman</span><span style="color:#8a8a8a"> · http://127.0.0.1:8081</span>                                                   <span style="color:#5fafff;font-weight:700;text-decoration:underline">1</span><span style="color:#5fafff;text-decoration:underline"> </span><span style="color:#5fafff;font-weight:700;text-decoration:underline">keys</span>  <span style="color:#8a8a8a">2 detections</span>  <span style="color:#8a8a8a">3 audit</span>  <span style="color:#8a8a8a">4 setup</span>
+<span style="color:#ffaf00">! 2 keys work from any address · 1 key never expires · open one and press p</span>
+<span style="color:#8a8a8a">  name              status     kind      lock        alerts 7d  expires    last seen</span>
+<span style="color:#5fafff;background:#3a3a3a;font-weight:700">› </span><span style="background:#3a3a3a;font-weight:700">billing-svc     </span><span style="background:#3a3a3a">  </span><span style="color:#00d787;background:#3a3a3a;font-weight:700">active   </span><span style="background:#3a3a3a">  </span><span style="color:#8a8a8a;background:#3a3a3a;font-weight:700">standard</span><span style="background:#3a3a3a">  </span><span style="color:#00d787;background:#3a3a3a;font-weight:700">ip        </span><span style="background:#3a3a3a">  </span><span style="color:#ff5f5f;background:#3a3a3a;font-weight:700">3        </span><span style="background:#3a3a3a">  </span><span style="background:#3a3a3a;font-weight:700">in 81d   </span><span style="background:#3a3a3a">  </span><span style="background:#3a3a3a;font-weight:700">&lt;1m ago · billing-eu 192.0.2.30 DE</span>
+  ci-github         <span style="color:#00d787">active   </span>  <span style="color:#8a8a8a">standard</span>  <span style="color:#00d787">ip        </span>  <span style="color:#8a8a8a">0        </span>  in 21d     &lt;1m ago · github-actions 198.51.100.7 US
+  laptop            <span style="color:#00d787">active   </span>  <span style="color:#8a8a8a">standard</span>  <span style="color:#00d787">ip        </span>  <span style="color:#8a8a8a">0        </span>  in 29d     &lt;1m ago · dev-laptop 203.0.113.10 US
+  laptop (rotated)  <span style="color:#00d787">active   </span>  <span style="color:#8a8a8a">standard</span>  <span style="color:#00d787">ip        </span>  <span style="color:#8a8a8a">0        </span>  <span style="color:#ffaf00">in 23h   </span>  10h ago · office-mac 203.0.113.11 US
+  old-intern        <span style="color:#ffaf00">disabled </span>  <span style="color:#8a8a8a">standard</span>  <span style="color:#8a8a8a">open      </span>  <span style="color:#ff5f5f">4        </span>  in 81d     &lt;1m ago · 198.51.100.200 SG
+  prod-api          <span style="color:#00d787">active   </span>  <span style="color:#8a8a8a">standard</span>  <span style="color:#00d787">ip+country</span>  <span style="color:#ff5f5f">4        </span>  in 81d     &lt;1m ago · 203.0.113.200 BR
+  repo-decoy        <span style="color:#00d787">active   </span>  <span style="color:#d787ff">canary  </span>  <span style="color:#d787ff">decoy     </span>  <span style="color:#ff5f5f">1        </span>  <span style="color:#8a8a8a">never    </span>  &lt;1m ago · 192.0.2.200 NL
+  staging-worker    <span style="color:#00d787">active   </span>  <span style="color:#8a8a8a">standard</span>  <span style="color:#ffaf00">open      </span>  <span style="color:#ff5f5f">3        </span>  in 81d     &lt;1m ago · staging 192.0.2.40 DE
+  support-bot       <span style="color:#00d787">active   </span>  <span style="color:#8a8a8a">standard</span>  <span style="color:#ffaf00">open      </span>  <span style="color:#ff5f5f">13       </span>  <span style="color:#ffaf00">never    </span>  &lt;1m ago · 192.0.2.200 NL
+
+<span style="color:#8a8a8a">enter open · n new · p policy · r rotate · d disable · x revoke · / filter · ? help · q quit</span></pre>
+    </div>
+  </section>
+
+  <section class="leaks">
+    <div class="wrap">
+      <h2>API keys leak.</h2>
+      <div class="leak-grid">
+        <div><b>Committed</b><span>to a repo, then “removed” while it stays in history</span></div>
+        <div><b>Printed</b><span>in a CI log or an error report</span></div>
+        <div><b>Baked</b><span>into a container image or a mobile app</span></div>
+        <div><b>Copied</b><span>off a laptop, a backup or a shared .env</span></div>
+      </div>
+      <p class="leaks-tail">When one does, the provider key works for anyone, from anywhere, until you notice. Keman makes the leaked copy worth much less, and easy to kill.</p>
+    </div>
+  </section>
+
+  <section id="how" class="wrap section">
+    <div class="head">
+      <h2>A leaked key only works where you allow it</h2>
+      <p>Keman sits between your apps and the provider. Apps send a <code>kmn_…</code> virtual key. Keman checks it, then forwards the request with the real key, which never leaves Keman.</p>
+    </div>
+
+    <div class="flow">
+      <div class="col">
+        <div class="node"><h3>Your app</h3><p>Holds a virtual key</p><code>kmn_x7Kq…</code></div>
+        <div class="node thief"><h3>A leaked copy</h3><p>Used from a network or country you never allowed</p></div>
+      </div>
+      <div class="arrows" aria-hidden="true">
+        <div class="arrow"><span>kmn_ key</span></div>
+        <div class="arrow bad"><span>kmn_ key</span></div>
+      </div>
+      <div class="node keman">
+        <h3><img src="logo.svg" alt="" width="30" height="30">Keman</h3>
+        <ul>
+          <li><b>Checks</b> address, country, expiry, paths and models</li>
+          <li><b>Limits</b> requests per minute and dollars per day</li>
+          <li><b>Watches</b> for new countries, spikes and decoys</li>
+          <li><b>Swaps in</b> the real key, encrypted at rest</li>
+        </ul>
+        <p class="blocked">✕ Leaked copy refused, alert sent</p>
+      </div>
+      <div class="arrows one" aria-hidden="true">
+        <div class="arrow"><span>real key</span></div>
+      </div>
+      <div class="node provider">
+        <h3>Provider</h3>
+        <p>OpenAI · Anthropic · OpenRouter · Stripe · GitHub · any API that authenticates with a header</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="features" class="section features">
+    <div class="wrap">
+
+      <article class="feature">
+        <div class="intro">
+          <p class="kicker">Watch</p>
+          <h2>See who used a key, from where, and what it cost</h2>
+          <p>Open any key to see every client address that called it, with network and country, its spend and tokens, its detections, and its recent requests. Here a copy of <code>support-bot</code> is burning Opus credits from a new country.</p>
+        </div>
+        <div class="visual">
+          <div class="win">
+            <div class="bar"><i></i><i></i><i></i><span>keman · support-bot</span></div>
+            <pre class="term" data-capture="detail-support-bot" style="--cols:120"><span style="font-weight:700">keman</span><span style="color:#8a8a8a"> · http://127.0.0.1:8081</span>                                                     <span style="color:#5fafff;font-weight:700;text-decoration:underline">1</span><span style="color:#5fafff;text-decoration:underline"> </span><span style="color:#5fafff;font-weight:700;text-decoration:underline">keys</span>  <span style="color:#8a8a8a">2 detections</span>  <span style="color:#8a8a8a">3 audit</span>  <span style="color:#8a8a8a">4 setup</span>
+<span style="color:#8a8a8a">╭─</span><span style="color:#5fafff;font-weight:700"> support-bot </span><span style="color:#8a8a8a">────────────────────────────────────╮╭─</span><span style="color:#5fafff;font-weight:700"> requests · 15 recent · UTC · POST /v1/messages </span><span style="color:#8a8a8a">─────────────────╮</span>
+<span style="color:#8a8a8a">│</span> <span style="color:#8a8a8a">eWjbqwBD</span>                                  <span style="color:#00d787">active</span> <span style="color:#8a8a8a">││</span> <span style="color:#8a8a8a">05:55</span>  192.0.2.200    claude-opus-4-5      <span style="color:#8a8a8a">   2,353 → 170</span>  $0.02 <span style="color:#8a8a8a">│</span>
+<span style="color:#8a8a8a">│</span>                                                  <span style="color:#8a8a8a">││</span> <span style="color:#8a8a8a">05:55</span>  192.0.2.200    claude-opus-4-5      <span style="color:#8a8a8a">   2,623 → 633</span>  $0.03 <span style="color:#8a8a8a">│</span>
+<span style="color:#8a8a8a">│</span> <span style="color:#ff8787;background:#5f0000"> </span><span style="color:#ff8787;background:#5f0000;font-weight:700">open network</span><span style="color:#ff8787;background:#5f0000">  anyone who has it can call it    </span> <span style="color:#8a8a8a">││</span> <span style="color:#8a8a8a">05:55</span>  192.0.2.200    claude-opus-4-5      <span style="color:#8a8a8a">   1,198 → 497</span>  $0.02 <span style="color:#8a8a8a">│</span>
+<span style="color:#8a8a8a">│</span> <span style="color:#8a8a8a">  set --cidr &lt;egress&gt;/32</span>                         <span style="color:#8a8a8a">││</span> <span style="color:#8a8a8a">05:55</span>  203.0.113.200  claude-opus-4-5      <span style="color:#8a8a8a">43,421 → 4,219</span>  $0.32 <span style="color:#8a8a8a">│</span>
+<span style="color:#8a8a8a">│</span>                                                  <span style="color:#8a8a8a">││</span> <span style="color:#8a8a8a">05:55</span>  203.0.113.200  claude-opus-4-5      <span style="color:#8a8a8a">40,700 → 4,797</span>  $0.32 <span style="color:#8a8a8a">│</span>
+<span style="color:#8a8a8a">│</span> <span style="color:#ffd75f;background:#5f5f00"> </span><span style="color:#ffd75f;background:#5f5f00;font-weight:700">no expiry</span><span style="color:#ffd75f;background:#5f5f00">  a leaked copy keeps working         </span> <span style="color:#8a8a8a">││</span> <span style="color:#8a8a8a">05:55</span>  203.0.113.200  claude-opus-4-5      <span style="color:#8a8a8a">48,640 → 7,207</span>  $0.42 <span style="color:#8a8a8a">│</span>
+<span style="color:#8a8a8a">│</span> <span style="color:#8a8a8a">  key expiry 90d</span>                                 <span style="color:#8a8a8a">││</span> <span style="color:#8a8a8a">05:55</span>  203.0.113.200  claude-opus-4-5      <span style="color:#8a8a8a">65,911 → 6,933</span>  $0.50 <span style="color:#8a8a8a">│</span>
+<span style="color:#8a8a8a">│</span>                                                  <span style="color:#8a8a8a">││</span> <span style="color:#8a8a8a">05:55</span>  203.0.113.200  claude-opus-4-5      <span style="color:#8a8a8a">52,764 → 6,081</span>  $0.42 <span style="color:#8a8a8a">│</span>
+<span style="color:#8a8a8a">│</span> 3,534 requests · last 05:55                      <span style="color:#8a8a8a">││</span> <span style="color:#8a8a8a">05:55</span>  203.0.113.200  claude-opus-4-5      <span style="color:#8a8a8a">64,331 → 4,163</span>  $0.43 <span style="color:#8a8a8a">│</span>
+<span style="color:#8a8a8a">│</span> prod-eu-1  192.0.2.20 DE AS64502  3,513          <span style="color:#8a8a8a">││</span> <span style="color:#8a8a8a">05:55</span>  203.0.113.200  claude-opus-4-5      <span style="color:#8a8a8a">47,206 → 6,148</span>  $0.39 <span style="color:#8a8a8a">│</span>
+<span style="color:#8a8a8a">│</span> 203.0.113.200 BR AS64510  18                     <span style="color:#8a8a8a">││</span> <span style="color:#8a8a8a">05:55</span>  203.0.113.200  claude-opus-4-5      <span style="color:#8a8a8a">45,689 → 6,408</span>  $0.39 <span style="color:#8a8a8a">│</span>
+<span style="color:#8a8a8a">│</span> 192.0.2.200 NL AS64511  3                        <span style="color:#8a8a8a">││</span> <span style="color:#8a8a8a">05:55</span>  203.0.113.200  claude-opus-4-5      <span style="color:#8a8a8a">42,096 → 4,666</span>  $0.33 <span style="color:#8a8a8a">│</span>
+<span style="color:#8a8a8a">│</span> spend $21.27                                     <span style="color:#8a8a8a">││</span> <span style="color:#8a8a8a">05:55</span>  203.0.113.200  claude-opus-4-5      <span style="color:#8a8a8a">54,211 → 6,002</span>  $0.42 <span style="color:#8a8a8a">│</span>
+<span style="color:#8a8a8a">│</span> in 7,253,035 · out 1,635,096                     <span style="color:#8a8a8a">││</span> <span style="color:#8a8a8a">05:55</span>  203.0.113.200  claude-opus-4-5      <span style="color:#8a8a8a">64,803 → 4,854</span>  $0.45 <span style="color:#8a8a8a">│</span>
+<span style="color:#8a8a8a">│</span>                                                  <span style="color:#8a8a8a">││</span> <span style="color:#8a8a8a">05:55</span>  203.0.113.200  claude-opus-4-5      <span style="color:#8a8a8a">42,689 → 6,803</span>  $0.38 <span style="color:#8a8a8a">│</span>
+<span style="color:#8a8a8a">│</span> <span style="color:#8a8a8a">detections</span>                                       <span style="color:#8a8a8a">││</span>                                                                  <span style="color:#8a8a8a">│</span>
+<span style="color:#8a8a8a">│</span> 2026-10-29 05:55 UTC  <span style="color:#ff5f5f">high</span>  spend_spike ×9       <span style="color:#8a8a8a">││</span>                                                                  <span style="color:#8a8a8a">│</span>
+<span style="color:#8a8a8a">│</span> 2026-10-29 05:55 UTC  <span style="color:#8a8a8a">low</span>  new_asn ×2            <span style="color:#8a8a8a">││</span>                                                                  <span style="color:#8a8a8a">│</span>
+<span style="color:#8a8a8a">│</span> 2026-10-29 05:55 UTC  <span style="color:#ffaf00">medium</span>  new_country ×2     <span style="color:#8a8a8a">││</span>                                                                  <span style="color:#8a8a8a">│</span>
+<span style="color:#8a8a8a">╰──────────────────────────────────────────────────╯╰──────────────────────────────────────────────────────────────────╯</span>
+
+<span style="color:#8a8a8a">p policy · r rotate · n name · d disable · e enable · x revoke · j/k scroll · esc back · q quit</span></pre>
+          </div>
+        </div>
+      </article>
+
+      <article class="feature side">
+        <div class="intro">
+          <p class="kicker">Alert</p>
+          <h2>Every alert tells you what to do next</h2>
+          <p>Alerts go to Slack or a signed webhook. Each one says who called and from where, and leads with the exact command to respond: rotate if it wasn’t you, disable if you’re not sure, allow the address if it was.</p>
+        </div>
+        <div class="visual">
+          <div class="slack">
+            <div class="chan"># security-alerts<small>Keman alerts</small></div>
+            <div class="msg">
+              <img src="logo.svg" alt="" width="36" height="36">
+              <div>
+                <div class="who">Keman<b>APP</b><small>4:31 PM</small></div>
+                <div class="text" data-alert="spend_spike support-bot">[high] spend_spike on virtual key support-bot (eWjbqwBD) from 203.0.113.200 (BR, AS64510) calling POST /v1/messages
+evidence: {&quot;hour_microusd&quot;:5298533,&quot;model&quot;:&quot;claude-opus-4-5&quot;,&quot;p95_microusd&quot;:144411,&quot;threshold_microusd&quot;:5000000}
+what to do:
+  Not you: issue a replacement and revoke the leaked key now
+    keman key rotate eWjbqwBD --grace 0
+  Not sure: turn it off until you know (reversible)
+    keman key disable eWjbqwBD
+  It was you: allow this address and nothing else
+    keman policy set eWjbqwBD --cidr 203.0.113.200/32
+  It was you: allow this country and nothing else
+    keman policy set eWjbqwBD --country BR</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="feature">
+        <div class="intro">
+          <p class="kicker">Detect</p>
+          <h2>Notices the ways keys get abused</h2>
+          <p>New countries and networks, rate and spend spikes, repeated blocked requests, upstream auth errors, a disabled key coming back, and decoys. A new key learns its normal traffic first, so normal use doesn’t raise alerts.</p>
+        </div>
+        <div class="visual">
+          <div class="win">
+            <div class="bar"><i></i><i></i><i></i><span>keman · detections</span></div>
+            <pre class="term" data-capture="detections" style="--cols:118"><span style="font-weight:700">keman</span><span style="color:#8a8a8a"> · http://127.0.0.1:8081</span>                                                   <span style="color:#8a8a8a">1 keys</span>  <span style="color:#5fafff;font-weight:700;text-decoration:underline">2</span><span style="color:#5fafff;text-decoration:underline"> </span><span style="color:#5fafff;font-weight:700;text-decoration:underline">detections</span>  <span style="color:#8a8a8a">3 audit</span>  <span style="color:#8a8a8a">4 setup</span>
+<span style="color:#8a8a8a">  time                     severity  key                        rule</span>
+<span style="color:#5fafff;background:#3a3a3a;font-weight:700">› </span><span style="background:#3a3a3a;font-weight:700">2026-10-29 05:55 UTC   </span><span style="background:#3a3a3a">  </span><span style="color:#ffaf00;background:#3a3a3a;font-weight:700">medium  </span><span style="background:#3a3a3a">  </span><span style="background:#3a3a3a;font-weight:700">support-bot (eWjbqwBD)   </span><span style="background:#3a3a3a">  </span><span style="background:#3a3a3a;font-weight:700">new_country ×2</span>
+  2026-10-29 05:55 UTC     <span style="color:#8a8a8a">low     </span>  support-bot (eWjbqwBD)     new_asn ×2
+  2026-10-29 05:55 UTC     <span style="color:#ff5f5f">high    </span>  support-bot (eWjbqwBD)     spend_spike ×9
+  2026-10-29 05:55 UTC     <span style="color:#ffaf00">medium  </span>  prod-api (WreXPDjt)        new_country
+  2026-10-29 05:55 UTC     <span style="color:#8a8a8a">low     </span>  prod-api (WreXPDjt)        new_asn
+  2026-10-29 05:55 UTC     <span style="color:#ffaf00">medium  </span>  prod-api (WreXPDjt)        allowlist_violations ×2
+  2026-10-29 05:55 UTC     <span style="color:#ffaf00">medium  </span>  billing-svc (qRb2jsAg)     allowlist_violations ×3
+  2026-10-29 05:55 UTC     <span style="color:#ff5f5f">high    </span>  old-intern (M6FwpHWQ)      disabled_key_used ×4
+  2026-10-29 05:55 UTC     <span style="color:#ffaf00">medium  </span>  staging-worker (QF6eWCAY)  upstream_auth_burst ×3
+  2026-10-29 05:55 UTC     <span style="color:#ff5f5f">critical</span>  repo-decoy (ARKIgzmg)      canary_used
+
+<span style="color:#8a8a8a">j/k move · enter open key · / filter · 1-4 views · ? help · q quit</span></pre>
+          </div>
+        </div>
+      </article>
+
+      <article class="feature side">
+        <div class="intro">
+          <p class="kicker">Contain</p>
+          <h2>Kill a leaked key in one command</h2>
+          <p><code>keman key rotate</code> issues a replacement with the same policy and revokes the leaked copy. The real provider key stays the same, and so does every other app. Use <code>--grace 24h</code> for a planned rotation.</p>
+        </div>
+        <div class="visual">
+          <div class="win">
+            <div class="bar"><i></i><i></i><i></i><span>acme-api</span></div>
+            <pre class="term" data-capture="rotate" style="--cols:69"><span style="color:#5fafff">acme-api</span> <span style="color:#8a8a8a">$</span> keman key rotate support-bot --grace 0
+store the new virtual key (token) now; it is not shown again
+the old key is revoked and renamed &quot;support-bot (rotated)&quot;
+{
+  &quot;credential_id&quot;: &quot;cred_kMc9cUUTLW1e&quot;,
+  &quot;expires_at&quot;: &quot;2027-01-27T05:56:13Z&quot;,
+  &quot;id&quot;: &quot;qw4pwkQP&quot;,
+  &quot;kind&quot;: &quot;standard&quot;,
+  &quot;name&quot;: &quot;support-bot&quot;,
+  &quot;replaced&quot;: {
+    &quot;expires_at&quot;: null,
+    &quot;id&quot;: &quot;eWjbqwBD&quot;,
+    &quot;name&quot;: &quot;support-bot (rotated)&quot;,
+    &quot;status&quot;: &quot;revoked&quot;
+  },
+  &quot;status&quot;: &quot;active&quot;,
+  &quot;token&quot;: &quot;kmn_qw4pwkQP_fQcSLfCAfneIl3wny6Wb8xWir2VCmoGG2jwyaa4IuKz&quot;
+}</pre>
+          </div>
+        </div>
+      </article>
+
+      <article class="feature">
+        <div class="intro">
+          <p class="kicker">Deceive</p>
+          <h2>Plant a decoy, catch the thief</h2>
+          <p>Canary keys look like real ones and never reach the provider. Plant one in a repo, a CI config or a backup. Its first use raises a critical alert, so you know what else was stored next to it.</p>
+        </div>
+        <div class="visual stack">
+          <div class="win">
+            <div class="bar"><i></i><i></i><i></i><span>acme-api</span></div>
+            <pre class="term" data-capture="canary" style="--cols:117"><span style="color:#5fafff">acme-api</span> <span style="color:#8a8a8a">$</span> keman canary create --credential openai-main --name decoy --base-url https://keman.example.com &gt;&gt; .env.bak
+canary decoy (CgrngVMh) created. Plant the lines above where a thief would look: a .env in a repo,
+CI variables, an old config or a backup. Any use raises a critical alert and never reaches the upstream.
+Keep the snippet free of comments that mention keman or canaries.
+<span style="color:#5fafff">acme-api</span> <span style="color:#8a8a8a">$</span> cat .env.bak
+OPENAI_API_KEY=kmn_CgrngVMh_3WZbZ3Ndk6MlvxSFyEqersjEhBfwYG4VTSQVwVabp05
+OPENAI_BASE_URL=https://keman.example.com/v1</pre>
+          </div>
+          <div class="slack">
+            <div class="chan"># security-alerts<small>Keman alerts</small></div>
+            <div class="msg">
+              <img src="logo.svg" alt="" width="36" height="36">
+              <div>
+                <div class="who">Keman<b>APP</b><small>4:32 PM</small></div>
+                <div class="text" data-alert="canary_used">[critical] canary_used on virtual key repo-decoy (ARKIgzmg) from 192.0.2.200 (NL, AS64511)
+evidence: {&quot;count&quot;:1}
+what to do:
+  A decoy was used. Whoever has it also saw what was stored next to it. Rotate those real secrets.
+  See every use of the decoy, with addresses
+    keman detection list --key ARKIgzmg</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="feature">
+        <div class="intro">
+          <p class="kicker">Find</p>
+          <h2>Find the keys you already leaked</h2>
+          <p><code>keman scan</code> checks your files and every commit on every branch for OpenAI, Anthropic, OpenRouter, Stripe, GitHub, Slack, Google and AWS keys. It runs offline, needs no setup, and exits 3 so it can gate CI.</p>
+        </div>
+        <div class="visual">
+          <div class="win">
+            <div class="bar"><i></i><i></i><i></i><span>acme-api</span></div>
+            <pre class="term" data-capture="scan" style="--cols:125"><span style="color:#5fafff">acme-api</span> <span style="color:#8a8a8a">$</span> keman scan . --history
+found 2 secrets in 3 places
+
+Stripe  sk_live_…co1J
+  config/settings.py:1
+  config/settings.py:1  (commit 49be1ec107d8)
+  Move it behind Keman so apps only ever hold a virtual key:
+    keman upstream add --name stripe --profile generic --host api.stripe.com --port 443 --tls --path &quot;METHOD /path&quot;    (once)
+    keman credential add --upstream stripe --name stripe-main --secret-env STRIPE_SECRET_KEY
+    keman key create --credential stripe-main --name &lt;app&gt; --expires 90d
+  It is in git history, so treat it as leaked: rotate it at Stripe too.
+
+OpenAI  sk-proj-…8Htp
+  .env:1  (commit 2ade78f74bd7)
+  Move it behind Keman so apps only ever hold a virtual key:
+    keman upstream add --name openai --profile openai --host api.openai.com --port 443 --tls    (once)
+    keman credential add --upstream openai --name openai-main --secret-env OPENAI_API_KEY
+    keman key create --credential openai-main --name &lt;app&gt; --expires 90d
+  It is in git history, so treat it as leaked: rotate it at OpenAI too.</pre>
+          </div>
+        </div>
+      </article>
+
+      <article class="feature side">
+        <div class="intro">
+          <p class="kicker">Harden</p>
+          <h2>Know which keys would hurt if they leaked</h2>
+          <p>Lock each key to the addresses or countries it runs from, the paths and models it may call, a request rate and a daily dollar cap. New keys expire after 90 days. <code>keman exposure</code> lists the keys that are still easy to abuse, with the fix for each.</p>
+        </div>
+        <div class="visual">
+          <div class="win">
+            <div class="bar"><i></i><i></i><i></i><span>acme-api</span></div>
+            <pre class="term" data-capture="exposure" style="--cols:78"><span style="color:#5fafff">acme-api</span> <span style="color:#8a8a8a">$</span> keman exposure
+staging-worker (QF6eWCAY)
+  high    Works from any address. A leaked copy works for anyone who finds it.
+          fix: keman policy set QF6eWCAY --cidr &lt;your egress IP&gt;/32
+
+support-bot (eWjbqwBD)
+  high    Works from any address. A leaked copy works for anyone who finds it.
+          fix: keman policy set eWjbqwBD --cidr &lt;your egress IP&gt;/32
+  medium  Never expires. A copy leaked years ago still works.
+          fix: keman key expiry eWjbqwBD 90d
+
+2 of 7 active keys would be easy to abuse if they leaked.</pre>
+          </div>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <section class="section wrap">
+    <div class="head">
+      <h2>Built to be trusted with your keys</h2>
+    </div>
+    <div class="grid">
+      <div class="card"><h3>Self-hosted</h3><p>Runs on your machine or your network. No account, no cloud service, and it never phones home.</p></div>
+      <div class="card"><h3>Real keys stay put</h3><p>Provider keys are encrypted at rest and never sent to apps. Virtual keys are stored only as hashes.</p></div>
+      <div class="card"><h3>Your data is not logged</h3><p>Request bodies, headers and query strings are never logged. For LLM calls Keman reads only the model and token settings, and the usage counts.</p></div>
+      <div class="card"><h3>Fast</h3><p>About 0.07 ms added at the median on loopback. Responses stream back unbuffered, including SSE from the official SDKs.</p></div>
+      <div class="card"><h3>One binary</h3><p>A single Go binary with pure-Go SQLite, for Linux, macOS and Windows, plus a distroless multi-arch image.</p></div>
+      <div class="card"><h3>Verifiable</h3><p>Apache-2.0. Every release ships SHA-256 sums, an SPDX SBOM and a keyless cosign signature.</p></div>
+    </div>
+  </section>
+
+  <section id="install" class="section install">
+    <div class="wrap">
+      <div class="head">
+        <h2>Install</h2>
+        <p>Then run <code>keman init</code> and <code>keman</code> to open the terminal UI and start the proxy.</p>
+      </div>
+
+      <div class="tabs" role="tablist">
+        <button type="button" role="tab" aria-selected="true" data-tab="script">macOS / Linux</button>
+        <button type="button" role="tab" aria-selected="false" data-tab="go">Go</button>
+        <button type="button" role="tab" aria-selected="false" data-tab="docker">Docker</button>
+        <button type="button" role="tab" aria-selected="false" data-tab="binary">Windows / by hand</button>
+      </div>
+
+      <div class="panel" data-panel="script">
+        <div class="cmd" data-copy="curl -fsSL https://raw.githubusercontent.com/kirank55/keman/main/scripts/install.sh | sh">
+          <code><span class="prompt">$</span> curl -fsSL https://raw.githubusercontent.com/kirank55/keman/main/scripts/install.sh | sh</code>
+          <button type="button" class="copy" aria-label="Copy">Copy</button>
+        </div>
+        <p class="note">Picks the binary for your OS and CPU, checks its SHA-256 sum (and its cosign signature if <code>cosign</code> is installed), and installs to <code>/usr/local/bin</code> or <code>~/.local/bin</code>. <a href="https://github.com/kirank55/keman/blob/main/scripts/install.sh">Read the script</a>.</p>
+      </div>
+      <div class="panel" data-panel="go" hidden>
+        <div class="cmd" data-copy="go install github.com/kirank55/keman/cmd/keman@latest">
+          <code><span class="prompt">$</span> go install github.com/kirank55/keman/cmd/keman@latest</code>
+          <button type="button" class="copy" aria-label="Copy">Copy</button>
+        </div>
+        <p class="note">Needs Go 1.22 or newer. No CGO.</p>
+      </div>
+      <div class="panel" data-panel="docker" hidden>
+        <div class="cmd" data-copy="docker volume create keman-data
+docker run --rm -v keman-data:/home/nonroot ghcr.io/kirank55/keman:beta init
+docker run --rm -p 8080:8080 -v keman-data:/home/nonroot ghcr.io/kirank55/keman:beta serve">
+          <code><span class="prompt">$</span> docker volume create keman-data
+<span class="prompt">$</span> docker run --rm -v keman-data:/home/nonroot ghcr.io/kirank55/keman:beta init
+<span class="prompt">$</span> docker run --rm -p 8080:8080 -v keman-data:/home/nonroot ghcr.io/kirank55/keman:beta serve</code>
+          <button type="button" class="copy" aria-label="Copy">Copy</button>
+        </div>
+        <p class="note">Multi-arch (amd64, arm64), distroless, non-root, and signed with cosign.</p>
+      </div>
+      <div class="panel" data-panel="binary" hidden>
+        <p class="note">Download <code>keman_&lt;os&gt;_&lt;arch&gt;</code> (<code>.exe</code> on Windows) from <a href="https://github.com/kirank55/keman/releases">GitHub Releases</a>. Every binary has a SHA-256 sum, an SBOM and a cosign signature. <a href="https://github.com/kirank55/keman/blob/main/SECURITY.md#verifying-a-release">How to verify a release</a>.</p>
+      </div>
+
+      <div id="try" class="try">
+        <div>
+          <h3>Try it without a provider key</h3>
+          <p>The demo seeds seven keys, a week of normal traffic, and the incidents Keman exists to catch, all against a local mock upstream. Every address is from a documentation range.</p>
+        </div>
+        <div class="cmd" data-copy="git clone https://github.com/kirank55/keman && cd keman
+./scripts/demo.sh
+KEMAN_ADMIN_TOKEN=&quot;$(cat .demo/admin.token)&quot; .demo/keman --config .demo/keman.yaml">
+          <code><span class="prompt">$</span> git clone https://github.com/kirank55/keman &amp;&amp; cd keman
+<span class="prompt">$</span> ./scripts/demo.sh
+<span class="prompt">$</span> KEMAN_ADMIN_TOKEN="$(cat .demo/admin.token)" .demo/keman --config .demo/keman.yaml</code>
+          <button type="button" class="copy" aria-label="Copy">Copy</button>
+        </div>
+      </div>
+
+      <div class="clients">
+        <h3>Point an app at Keman</h3>
+        <p>Send the virtual key wherever the app expects its API key, and change the base URL.</p>
+        <table>
+          <tr><th>OpenAI Python / Node SDK</th><td><code>http://127.0.0.1:8080/v1</code></td></tr>
+          <tr><th>OpenRouter through Keman</th><td><code>http://127.0.0.1:8080/api/v1</code></td></tr>
+          <tr><th>Anthropic SDK</th><td><code>http://127.0.0.1:8080</code></td></tr>
+          <tr><th>Stripe, GitHub, any header-auth API</th><td>The API’s own paths, with a path allowlist you choose</td></tr>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section id="faq" class="section wrap faq">
+    <div class="head"><h2>Questions</h2></div>
+
+    <details>
+      <summary>Does Keman see my prompts?</summary>
+      <p>It forwards them, the way any proxy does, but it doesn’t keep them. For LLM APIs it reads only <code>model</code>, <code>stream</code>, <code>max_tokens</code> and <code>stream_options</code> from the request, and only the usage counts from the response. Bodies, headers and query strings are never logged. It runs on your own machine, so nothing goes to a third party.</p>
+    </details>
+    <details>
+      <summary>How much latency does it add?</summary>
+      <p>On loopback, about 71 µs at the median and 555 µs at p99 (<a href="https://github.com/kirank55/keman/blob/main/benchmarks/RESULTS.md">benchmark</a>). Responses, including streams, are passed back unbuffered.</p>
+    </details>
+    <details>
+      <summary>Which APIs does it work with?</summary>
+      <p>OpenAI-compatible APIs (including OpenRouter), Anthropic, and any HTTP API that authenticates with a header, such as Stripe or GitHub. Spend caps and model allowlists work for OpenAI and Anthropic. Generic APIs get a path allowlist, so a leaked key can only call the endpoints you listed.</p>
+    </details>
+    <details>
+      <summary>Can’t I just use provider-scoped keys or a secret scanner?</summary>
+      <p>Use both if you can. Scanners tell you a key leaked; Keman makes the leaked copy hard to use and gives you one switch to kill it. Provider scoping differs from provider to provider. Keman gives every key the same locks, alerts, decoys and one-step rotation, and adds them to APIs that have none. It also ships a scanner: <code>keman scan . --history</code>.</p>
+    </details>
+    <details>
+      <summary>Do country and network rules need anything extra?</summary>
+      <p>Yes. Country and ASN rules, and country locks, need a GeoLite2 or DB-IP <code>.mmdb</code> file. Keman does not bundle one. Address locks, expiry, caps, decoys and the other rules work without it.</p>
+    </details>
+    <details>
+      <summary>What doesn’t it protect against?</summary>
+      <p>Anyone who can read Keman’s memory or its host can read the real keys. Run it isolated from the apps that use it, and keep the admin listener off the network. The <a href="https://github.com/kirank55/keman/blob/main/docs/THREAT-MODEL.md">threat model</a> lists the rest.</p>
+    </details>
+    <details>
+      <summary>Is it ready for production?</summary>
+      <p>It’s a beta. It runs as a single instance on SQLite and proxies HTTP only (no WebSockets yet, so no OpenAI Realtime). Please try it and <a href="https://github.com/kirank55/keman/issues">open an issue</a> with anything that gets in your way.</p>
+    </details>
+    <details>
+      <summary>What does it cost?</summary>
+      <p>Nothing. Keman is free and open source under Apache-2.0, and runs on your own hardware.</p>
+    </details>
+  </section>
+
+  <section class="final wrap">
+    <img src="logo.svg" alt="" width="64" height="64">
+    <h2>Your API keys will leak. Make the leaked copy worthless.</h2>
+    <div class="cta-row">
+      <a class="btn" href="https://github.com/kirank55/keman">Get Keman on GitHub →</a>
+      <a class="btn btn-ghost" href="#install">Install</a>
+    </div>
+    <!-- Product Hunt badge: paste the embed code from your Product Hunt post here on launch day. -->
+  </section>
+
+</main>
+
+<footer class="footer">
+  <div class="wrap footer-row">
+    <span class="brand small"><img src="logo.svg" alt="" width="22" height="22">KEMAN</span>
+    <nav>
+      <a href="https://github.com/kirank55/keman">GitHub</a>
+      <a href="https://github.com/kirank55/keman/releases">Releases</a>
+      <a href="https://github.com/kirank55/keman/blob/main/SECURITY.md">Security</a>
+      <a href="https://github.com/kirank55/keman/blob/main/CHANGELOG.md">Changelog</a>
+      <a href="https://github.com/kirank55/keman/issues">Issues</a>
+    </nav>
+    <span class="muted">Apache-2.0</span>
+  </div>
+</footer>
+
+<script src="main.js" defer></script>
+</body>
+</html>
