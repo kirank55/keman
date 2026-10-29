@@ -73,7 +73,7 @@ Keman is a small proxy you run yourself. Your apps get virtual keys (`kmn_…`) 
 🪤 Decoys catch the thief. Canary keys look real and set off a critical alert on first use.
 ⚡ You kill it in one step. `keman key rotate <app> --grace 0`, and no other app notices.
 
-It works with OpenAI-compatible APIs (OpenRouter too), Anthropic, and any API that takes a key in a header, such as Stripe or GitHub. It's a single Go binary, Apache-2.0, with no account and no telemetry.
+It ships presets for 21 platforms, from OpenAI, Anthropic, OpenRouter, Gemini and Groq to Stripe, GitHub, Slack and Twilio, and works with any other API that takes a key in a header. It's a single Go binary, Apache-2.0, with no account and no telemetry.
 
 Two things to try in the next five minutes:
 • `keman scan . --history` finds the keys already sitting in your git history. No setup.
@@ -86,5 +86,5 @@ It's a beta: one instance on SQLite, and HTTP only. I'd love to hear which APIs 
 ## Short replies for later in the day
 
 - **To a thank-you:** "Thank you! If you try it, I'd love to hear what got in the way. Issues are open on GitHub."
-- **To "does it work with X?":** check [`replies.md`](replies.md). If X authenticates with a header, the answer is yes, with a path allowlist.
+- **To "does it work with X?":** check [`replies.md`](replies.md). If X is one of the 21 presets (`keman upstream presets`), it's one command. If it takes a key in a header or HTTP Basic, it works with a path allowlist you choose.
 - **To a feature request:** "Good one, I've opened an issue for it: <link>." Then open it.

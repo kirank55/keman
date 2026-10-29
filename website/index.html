@@ -82,18 +82,18 @@
 <span style="color:#5fafff;background:#3a3a3a;font-weight:700">› </span><span style="background:#3a3a3a;font-weight:700">billing-svc     </span><span style="background:#3a3a3a">  </span><span style="color:#00d787;background:#3a3a3a;font-weight:700">active   </span><span style="background:#3a3a3a">  </span><span style="color:#8a8a8a;background:#3a3a3a;font-weight:700">standard</span><span style="background:#3a3a3a">  </span><span style="color:#00d787;background:#3a3a3a;font-weight:700">ip        </span><span style="background:#3a3a3a">  </span><span style="color:#ff5f5f;background:#3a3a3a;font-weight:700">3        </span><span style="background:#3a3a3a">  </span><span style="background:#3a3a3a;font-weight:700">in 81d   </span><span style="background:#3a3a3a">  </span><span style="background:#3a3a3a;font-weight:700">&lt;1m ago · billing-eu 192.0.2.30 DE</span>
   ci-github         <span style="color:#00d787">active   </span>  <span style="color:#8a8a8a">standard</span>  <span style="color:#00d787">ip        </span>  <span style="color:#8a8a8a">0        </span>  in 21d     &lt;1m ago · github-actions 198.51.100.7 US
   laptop            <span style="color:#00d787">active   </span>  <span style="color:#8a8a8a">standard</span>  <span style="color:#00d787">ip        </span>  <span style="color:#8a8a8a">0        </span>  in 29d     &lt;1m ago · dev-laptop 203.0.113.10 US
-  laptop (rotated)  <span style="color:#00d787">active   </span>  <span style="color:#8a8a8a">standard</span>  <span style="color:#00d787">ip        </span>  <span style="color:#8a8a8a">0        </span>  <span style="color:#ffaf00">in 23h   </span>  10h ago · office-mac 203.0.113.11 US
+  laptop (rotated)  <span style="color:#00d787">active   </span>  <span style="color:#8a8a8a">standard</span>  <span style="color:#00d787">ip        </span>  <span style="color:#8a8a8a">0        </span>  <span style="color:#ffaf00">in 23h   </span>  5m ago · office-mac 203.0.113.11 US
   old-intern        <span style="color:#ffaf00">disabled </span>  <span style="color:#8a8a8a">standard</span>  <span style="color:#8a8a8a">open      </span>  <span style="color:#ff5f5f">4        </span>  in 81d     &lt;1m ago · 198.51.100.200 SG
   prod-api          <span style="color:#00d787">active   </span>  <span style="color:#8a8a8a">standard</span>  <span style="color:#00d787">ip+country</span>  <span style="color:#ff5f5f">4        </span>  in 81d     &lt;1m ago · 203.0.113.200 BR
   repo-decoy        <span style="color:#00d787">active   </span>  <span style="color:#d787ff">canary  </span>  <span style="color:#d787ff">decoy     </span>  <span style="color:#ff5f5f">1        </span>  <span style="color:#8a8a8a">never    </span>  &lt;1m ago · 192.0.2.200 NL
   staging-worker    <span style="color:#00d787">active   </span>  <span style="color:#8a8a8a">standard</span>  <span style="color:#ffaf00">open      </span>  <span style="color:#ff5f5f">3        </span>  in 81d     &lt;1m ago · staging 192.0.2.40 DE
-  support-bot       <span style="color:#00d787">active   </span>  <span style="color:#8a8a8a">standard</span>  <span style="color:#ffaf00">open      </span>  <span style="color:#ff5f5f">13       </span>  <span style="color:#ffaf00">never    </span>  &lt;1m ago · 192.0.2.200 NL
+  support-bot       <span style="color:#00d787">active   </span>  <span style="color:#8a8a8a">standard</span>  <span style="color:#ffaf00">open      </span>  <span style="color:#ff5f5f">14       </span>  <span style="color:#ffaf00">never    </span>  &lt;1m ago · 192.0.2.200 NL
 
 <span style="color:#8a8a8a">enter open · n new · p policy · r rotate · d disable · x revoke · / filter · ? help · q quit</span></pre>
     </div>
 
     <ul class="works" aria-label="Works with">
-      <li>OpenAI</li><li>Anthropic</li><li>OpenRouter</li><li>Stripe</li><li>GitHub</li><li>any API that takes a key in a header</li>
+      <li>OpenAI</li><li>Anthropic</li><li>OpenRouter</li><li>Gemini</li><li>Groq</li><li>Mistral</li><li>DeepSeek</li><li>xAI</li><li>Stripe</li><li>GitHub</li><li>Slack</li><li>Twilio</li><li>and 9 more presets, or any HTTP API</li>
     </ul>
   </section>
 
@@ -149,7 +149,7 @@
       </div>
       <div class="node provider">
         <h3>Provider</h3>
-        <p>OpenAI · Anthropic · OpenRouter · Stripe · GitHub · any API that authenticates with a header</p>
+        <p>21 platform presets, from OpenAI, Anthropic and Groq to Stripe, GitHub and Twilio, or any HTTP API that takes a key in a header</p>
       </div>
     </div>
   </section>
@@ -193,7 +193,7 @@
             <div class="sim-panel" role="tabpanel" id="sim-allowed" aria-labelledby="sim-tab-allowed" data-panel="allowed">
               <pre class="term http" data-request="allowed"><span class="h-dim"># prod-api, called from 192.0.2.20 (DE, AS64502)</span>
 <span class="h-method">POST</span> /v1/chat/completions
-<span class="h-hdr">Authorization:</span> Bearer kmn_WreXPDjt_…
+<span class="h-hdr">Authorization:</span> Bearer kmn_MjI3yW5z_…
 
 {<span class="j-key">&quot;model&quot;</span>: <span class="j-str">&quot;gpt-4o-mini&quot;</span>, <span class="j-key">&quot;messages&quot;</span>: [{<span class="j-key">&quot;role&quot;</span>: <span class="j-str">&quot;user&quot;</span>, <span class="j-key">&quot;content&quot;</span>: <span class="j-str">&quot;hi&quot;</span>}]}
 
@@ -210,14 +210,14 @@
       <span class="j-key">&quot;finish_reason&quot;</span>: <span class="j-str">&quot;stop&quot;</span>
     }
   ],
-  <span class="j-key">&quot;usage&quot;</span>: {<span class="j-key">&quot;prompt_tokens&quot;</span>: <span class="j-num">2264</span>, <span class="j-key">&quot;completion_tokens&quot;</span>: <span class="j-num">593</span>, <span class="j-key">&quot;total_tokens&quot;</span>: <span class="j-num">2857</span>}
+  <span class="j-key">&quot;usage&quot;</span>: {<span class="j-key">&quot;prompt_tokens&quot;</span>: <span class="j-num">2316</span>, <span class="j-key">&quot;completion_tokens&quot;</span>: <span class="j-num">448</span>, <span class="j-key">&quot;total_tokens&quot;</span>: <span class="j-num">2764</span>}
 }</pre>
               <p class="sim-note"><b>Forwarded.</b> Keman swaps in the real key and streams the provider’s answer back untouched. In the demo, the provider is a local mock.</p>
             </div>
             <div class="sim-panel" role="tabpanel" id="sim-network" aria-labelledby="sim-tab-network" data-panel="network" hidden>
               <pre class="term http" data-request="network"><span class="h-dim"># prod-api, called from 203.0.113.200 (BR, AS64510)</span>
 <span class="h-method">POST</span> /v1/chat/completions
-<span class="h-hdr">Authorization:</span> Bearer kmn_WreXPDjt_…
+<span class="h-hdr">Authorization:</span> Bearer kmn_MjI3yW5z_…
 
 {<span class="j-key">&quot;model&quot;</span>: <span class="j-str">&quot;gpt-4o-mini&quot;</span>, <span class="j-key">&quot;messages&quot;</span>: [{<span class="j-key">&quot;role&quot;</span>: <span class="j-str">&quot;user&quot;</span>, <span class="j-key">&quot;content&quot;</span>: <span class="j-str">&quot;hi&quot;</span>}]}
 
@@ -236,7 +236,7 @@
             <div class="sim-panel" role="tabpanel" id="sim-model" aria-labelledby="sim-tab-model" data-panel="model" hidden>
               <pre class="term http" data-request="model"><span class="h-dim"># prod-api, called from 192.0.2.20 (DE, AS64502)</span>
 <span class="h-method">POST</span> /v1/chat/completions
-<span class="h-hdr">Authorization:</span> Bearer kmn_WreXPDjt_…
+<span class="h-hdr">Authorization:</span> Bearer kmn_MjI3yW5z_…
 
 {<span class="j-key">&quot;model&quot;</span>: <span class="j-str">&quot;o3&quot;</span>, <span class="j-key">&quot;messages&quot;</span>: [{<span class="j-key">&quot;role&quot;</span>: <span class="j-str">&quot;user&quot;</span>, <span class="j-key">&quot;content&quot;</span>: <span class="j-str">&quot;hi&quot;</span>}]}
 
@@ -255,7 +255,7 @@
             <div class="sim-panel" role="tabpanel" id="sim-path" aria-labelledby="sim-tab-path" data-panel="path" hidden>
               <pre class="term http" data-request="path"><span class="h-dim"># billing-svc, called from 192.0.2.30 (DE, AS64502)</span>
 <span class="h-method">POST</span> /v1/payouts
-<span class="h-hdr">Authorization:</span> Bearer kmn_qRb2jsAg_…
+<span class="h-hdr">Authorization:</span> Bearer kmn_2M1MxJLa_…
 
 {<span class="j-key">&quot;amount&quot;</span>: <span class="j-num">250000</span>, <span class="j-key">&quot;currency&quot;</span>: <span class="j-str">&quot;usd&quot;</span>}
 
@@ -274,7 +274,7 @@
             <div class="sim-panel" role="tabpanel" id="sim-disabled" aria-labelledby="sim-tab-disabled" data-panel="disabled" hidden>
               <pre class="term http" data-request="disabled"><span class="h-dim"># old-intern, called from 198.51.100.200 (SG, AS64512)</span>
 <span class="h-method">POST</span> /v1/chat/completions
-<span class="h-hdr">Authorization:</span> Bearer kmn_M6FwpHWQ_…
+<span class="h-hdr">Authorization:</span> Bearer kmn_a2gxDT24_…
 
 {<span class="j-key">&quot;model&quot;</span>: <span class="j-str">&quot;gpt-4o-mini&quot;</span>, <span class="j-key">&quot;messages&quot;</span>: [{<span class="j-key">&quot;role&quot;</span>: <span class="j-str">&quot;user&quot;</span>, <span class="j-key">&quot;content&quot;</span>: <span class="j-str">&quot;hi&quot;</span>}]}
 
@@ -293,7 +293,7 @@
             <div class="sim-panel" role="tabpanel" id="sim-revoked" aria-labelledby="sim-tab-revoked" data-panel="revoked" hidden>
               <pre class="term http" data-request="revoked"><span class="h-dim"># support-bot, called from 203.0.113.200 (BR, AS64510)</span>
 <span class="h-method">POST</span> /v1/messages
-<span class="h-hdr">x-api-key:</span> kmn_eWjbqwBD_…
+<span class="h-hdr">x-api-key:</span> kmn_qWmeK8lJ_…
 
 {<span class="j-key">&quot;model&quot;</span>: <span class="j-str">&quot;claude-opus-4-5&quot;</span>, <span class="j-key">&quot;max_tokens&quot;</span>: <span class="j-num">1024</span>, <span class="j-key">&quot;messages&quot;</span>: [{<span class="j-key">&quot;role&quot;</span>: <span class="j-str">&quot;user&quot;</span>, <span class="j-key">&quot;content&quot;</span>: <span class="j-str">&quot;hi&quot;</span>}]}
 
@@ -312,7 +312,7 @@
             <div class="sim-panel" role="tabpanel" id="sim-canary" aria-labelledby="sim-tab-canary" data-panel="canary" hidden>
               <pre class="term http" data-request="canary"><span class="h-dim"># repo-decoy, called from 192.0.2.200 (NL, AS64511)</span>
 <span class="h-method">POST</span> /v1/chat/completions
-<span class="h-hdr">Authorization:</span> Bearer kmn_ARKIgzmg_…
+<span class="h-hdr">Authorization:</span> Bearer kmn_ZNDo8sy2_…
 
 {<span class="j-key">&quot;model&quot;</span>: <span class="j-str">&quot;gpt-4o&quot;</span>, <span class="j-key">&quot;messages&quot;</span>: [{<span class="j-key">&quot;role&quot;</span>: <span class="j-str">&quot;user&quot;</span>, <span class="j-key">&quot;content&quot;</span>: <span class="j-str">&quot;hi&quot;</span>}]}
 
@@ -353,25 +353,25 @@
                 <div class="bar"><i></i><i></i><i></i><span>keman · support-bot</span></div>
                 <pre class="term" data-capture="detail-support-bot" style="--cols:120"><span style="font-weight:700">keman</span><span style="color:#8a8a8a"> · http://127.0.0.1:8081</span>                                                     <span style="color:#5fafff;font-weight:700;text-decoration:underline">1</span><span style="color:#5fafff;text-decoration:underline"> </span><span style="color:#5fafff;font-weight:700;text-decoration:underline">keys</span>  <span style="color:#8a8a8a">2 detections</span>  <span style="color:#8a8a8a">3 audit</span>  <span style="color:#8a8a8a">4 setup</span>
 <span style="color:#8a8a8a">╭─</span><span style="color:#5fafff;font-weight:700"> support-bot </span><span style="color:#8a8a8a">────────────────────────────────────╮╭─</span><span style="color:#5fafff;font-weight:700"> requests · 15 recent · UTC · POST /v1/messages </span><span style="color:#8a8a8a">─────────────────╮</span>
-<span style="color:#8a8a8a">│</span> <span style="color:#8a8a8a">eWjbqwBD</span>                                  <span style="color:#00d787">active</span> <span style="color:#8a8a8a">││</span> <span style="color:#8a8a8a">05:55</span>  192.0.2.200    claude-opus-4-5      <span style="color:#8a8a8a">   2,353 → 170</span>  $0.02 <span style="color:#8a8a8a">│</span>
-<span style="color:#8a8a8a">│</span>                                                  <span style="color:#8a8a8a">││</span> <span style="color:#8a8a8a">05:55</span>  192.0.2.200    claude-opus-4-5      <span style="color:#8a8a8a">   2,623 → 633</span>  $0.03 <span style="color:#8a8a8a">│</span>
-<span style="color:#8a8a8a">│</span> <span style="color:#ff8787;background:#5f0000"> </span><span style="color:#ff8787;background:#5f0000;font-weight:700">open network</span><span style="color:#ff8787;background:#5f0000">  anyone who has it can call it    </span> <span style="color:#8a8a8a">││</span> <span style="color:#8a8a8a">05:55</span>  192.0.2.200    claude-opus-4-5      <span style="color:#8a8a8a">   1,198 → 497</span>  $0.02 <span style="color:#8a8a8a">│</span>
-<span style="color:#8a8a8a">│</span> <span style="color:#8a8a8a">  set --cidr &lt;egress&gt;/32</span>                         <span style="color:#8a8a8a">││</span> <span style="color:#8a8a8a">05:55</span>  203.0.113.200  claude-opus-4-5      <span style="color:#8a8a8a">43,421 → 4,219</span>  $0.32 <span style="color:#8a8a8a">│</span>
-<span style="color:#8a8a8a">│</span>                                                  <span style="color:#8a8a8a">││</span> <span style="color:#8a8a8a">05:55</span>  203.0.113.200  claude-opus-4-5      <span style="color:#8a8a8a">40,700 → 4,797</span>  $0.32 <span style="color:#8a8a8a">│</span>
-<span style="color:#8a8a8a">│</span> <span style="color:#ffd75f;background:#5f5f00"> </span><span style="color:#ffd75f;background:#5f5f00;font-weight:700">no expiry</span><span style="color:#ffd75f;background:#5f5f00">  a leaked copy keeps working         </span> <span style="color:#8a8a8a">││</span> <span style="color:#8a8a8a">05:55</span>  203.0.113.200  claude-opus-4-5      <span style="color:#8a8a8a">48,640 → 7,207</span>  $0.42 <span style="color:#8a8a8a">│</span>
-<span style="color:#8a8a8a">│</span> <span style="color:#8a8a8a">  key expiry 90d</span>                                 <span style="color:#8a8a8a">││</span> <span style="color:#8a8a8a">05:55</span>  203.0.113.200  claude-opus-4-5      <span style="color:#8a8a8a">65,911 → 6,933</span>  $0.50 <span style="color:#8a8a8a">│</span>
-<span style="color:#8a8a8a">│</span>                                                  <span style="color:#8a8a8a">││</span> <span style="color:#8a8a8a">05:55</span>  203.0.113.200  claude-opus-4-5      <span style="color:#8a8a8a">52,764 → 6,081</span>  $0.42 <span style="color:#8a8a8a">│</span>
-<span style="color:#8a8a8a">│</span> 3,534 requests · last 05:55                      <span style="color:#8a8a8a">││</span> <span style="color:#8a8a8a">05:55</span>  203.0.113.200  claude-opus-4-5      <span style="color:#8a8a8a">64,331 → 4,163</span>  $0.43 <span style="color:#8a8a8a">│</span>
-<span style="color:#8a8a8a">│</span> prod-eu-1  192.0.2.20 DE AS64502  3,513          <span style="color:#8a8a8a">││</span> <span style="color:#8a8a8a">05:55</span>  203.0.113.200  claude-opus-4-5      <span style="color:#8a8a8a">47,206 → 6,148</span>  $0.39 <span style="color:#8a8a8a">│</span>
-<span style="color:#8a8a8a">│</span> 203.0.113.200 BR AS64510  18                     <span style="color:#8a8a8a">││</span> <span style="color:#8a8a8a">05:55</span>  203.0.113.200  claude-opus-4-5      <span style="color:#8a8a8a">45,689 → 6,408</span>  $0.39 <span style="color:#8a8a8a">│</span>
-<span style="color:#8a8a8a">│</span> 192.0.2.200 NL AS64511  3                        <span style="color:#8a8a8a">││</span> <span style="color:#8a8a8a">05:55</span>  203.0.113.200  claude-opus-4-5      <span style="color:#8a8a8a">42,096 → 4,666</span>  $0.33 <span style="color:#8a8a8a">│</span>
-<span style="color:#8a8a8a">│</span> spend $21.27                                     <span style="color:#8a8a8a">││</span> <span style="color:#8a8a8a">05:55</span>  203.0.113.200  claude-opus-4-5      <span style="color:#8a8a8a">54,211 → 6,002</span>  $0.42 <span style="color:#8a8a8a">│</span>
-<span style="color:#8a8a8a">│</span> in 7,253,035 · out 1,635,096                     <span style="color:#8a8a8a">││</span> <span style="color:#8a8a8a">05:55</span>  203.0.113.200  claude-opus-4-5      <span style="color:#8a8a8a">64,803 → 4,854</span>  $0.45 <span style="color:#8a8a8a">│</span>
-<span style="color:#8a8a8a">│</span>                                                  <span style="color:#8a8a8a">││</span> <span style="color:#8a8a8a">05:55</span>  203.0.113.200  claude-opus-4-5      <span style="color:#8a8a8a">42,689 → 6,803</span>  $0.38 <span style="color:#8a8a8a">│</span>
+<span style="color:#8a8a8a">│</span> <span style="color:#8a8a8a">qWmeK8lJ</span>                                  <span style="color:#00d787">active</span> <span style="color:#8a8a8a">││</span> <span style="color:#8a8a8a">07:46</span>  192.0.2.200    claude-opus-4-5    <span style="color:#8a8a8a">    1,382 → 99</span>  $0.0094 <span style="color:#8a8a8a">│</span>
+<span style="color:#8a8a8a">│</span>                                                  <span style="color:#8a8a8a">││</span> <span style="color:#8a8a8a">07:46</span>  192.0.2.200    claude-opus-4-5    <span style="color:#8a8a8a">     843 → 469</span>    $0.02 <span style="color:#8a8a8a">│</span>
+<span style="color:#8a8a8a">│</span> <span style="color:#ff8787;background:#5f0000"> </span><span style="color:#ff8787;background:#5f0000;font-weight:700">open network</span><span style="color:#ff8787;background:#5f0000">  anyone who has it can call it    </span> <span style="color:#8a8a8a">││</span> <span style="color:#8a8a8a">07:46</span>  192.0.2.200    claude-opus-4-5    <span style="color:#8a8a8a">   2,695 → 177</span>    $0.02 <span style="color:#8a8a8a">│</span>
+<span style="color:#8a8a8a">│</span> <span style="color:#8a8a8a">  set --cidr &lt;egress&gt;/32</span>                         <span style="color:#8a8a8a">││</span> <span style="color:#8a8a8a">07:46</span>  203.0.113.200  claude-opus-4-5    <span style="color:#8a8a8a">54,089 → 6,844</span>    $0.44 <span style="color:#8a8a8a">│</span>
+<span style="color:#8a8a8a">│</span>                                                  <span style="color:#8a8a8a">││</span> <span style="color:#8a8a8a">07:46</span>  203.0.113.200  claude-opus-4-5    <span style="color:#8a8a8a">47,920 → 7,447</span>    $0.43 <span style="color:#8a8a8a">│</span>
+<span style="color:#8a8a8a">│</span> <span style="color:#ffd75f;background:#5f5f00"> </span><span style="color:#ffd75f;background:#5f5f00;font-weight:700">no expiry</span><span style="color:#ffd75f;background:#5f5f00">  a leaked copy keeps working         </span> <span style="color:#8a8a8a">││</span> <span style="color:#8a8a8a">07:46</span>  203.0.113.200  claude-opus-4-5    <span style="color:#8a8a8a">46,727 → 6,783</span>    $0.40 <span style="color:#8a8a8a">│</span>
+<span style="color:#8a8a8a">│</span> <span style="color:#8a8a8a">  key expiry 90d</span>                                 <span style="color:#8a8a8a">││</span> <span style="color:#8a8a8a">07:46</span>  203.0.113.200  claude-opus-4-5    <span style="color:#8a8a8a">65,321 → 7,976</span>    $0.53 <span style="color:#8a8a8a">│</span>
+<span style="color:#8a8a8a">│</span>                                                  <span style="color:#8a8a8a">││</span> <span style="color:#8a8a8a">07:46</span>  203.0.113.200  claude-opus-4-5    <span style="color:#8a8a8a">54,428 → 7,489</span>    $0.46 <span style="color:#8a8a8a">│</span>
+<span style="color:#8a8a8a">│</span> 3,546 requests · last 07:46                      <span style="color:#8a8a8a">││</span> <span style="color:#8a8a8a">07:46</span>  203.0.113.200  claude-opus-4-5    <span style="color:#8a8a8a">54,115 → 4,423</span>    $0.38 <span style="color:#8a8a8a">│</span>
+<span style="color:#8a8a8a">│</span> prod-eu-1  192.0.2.20 DE AS64502  3,525          <span style="color:#8a8a8a">││</span> <span style="color:#8a8a8a">07:46</span>  203.0.113.200  claude-opus-4-5    <span style="color:#8a8a8a">69,124 → 7,335</span>    $0.53 <span style="color:#8a8a8a">│</span>
+<span style="color:#8a8a8a">│</span> 203.0.113.200 BR AS64510  18                     <span style="color:#8a8a8a">││</span> <span style="color:#8a8a8a">07:46</span>  203.0.113.200  claude-opus-4-5    <span style="color:#8a8a8a">41,837 → 4,719</span>    $0.33 <span style="color:#8a8a8a">│</span>
+<span style="color:#8a8a8a">│</span> 192.0.2.200 NL AS64511  3                        <span style="color:#8a8a8a">││</span> <span style="color:#8a8a8a">07:46</span>  203.0.113.200  claude-opus-4-5    <span style="color:#8a8a8a">59,220 → 7,544</span>    $0.48 <span style="color:#8a8a8a">│</span>
+<span style="color:#8a8a8a">│</span> spend $21.80                                     <span style="color:#8a8a8a">││</span> <span style="color:#8a8a8a">07:46</span>  203.0.113.200  claude-opus-4-5    <span style="color:#8a8a8a">56,144 → 4,718</span>    $0.40 <span style="color:#8a8a8a">│</span>
+<span style="color:#8a8a8a">│</span> in 7,378,616 · out 1,625,702                     <span style="color:#8a8a8a">││</span> <span style="color:#8a8a8a">07:46</span>  203.0.113.200  claude-opus-4-5    <span style="color:#8a8a8a">54,984 → 5,176</span>    $0.40 <span style="color:#8a8a8a">│</span>
+<span style="color:#8a8a8a">│</span>                                                  <span style="color:#8a8a8a">││</span> <span style="color:#8a8a8a">07:46</span>  203.0.113.200  claude-opus-4-5    <span style="color:#8a8a8a">64,804 → 6,150</span>    $0.48 <span style="color:#8a8a8a">│</span>
 <span style="color:#8a8a8a">│</span> <span style="color:#8a8a8a">detections</span>                                       <span style="color:#8a8a8a">││</span>                                                                  <span style="color:#8a8a8a">│</span>
-<span style="color:#8a8a8a">│</span> 2026-10-29 05:55 UTC  <span style="color:#ff5f5f">high</span>  spend_spike ×9       <span style="color:#8a8a8a">││</span>                                                                  <span style="color:#8a8a8a">│</span>
-<span style="color:#8a8a8a">│</span> 2026-10-29 05:55 UTC  <span style="color:#8a8a8a">low</span>  new_asn ×2            <span style="color:#8a8a8a">││</span>                                                                  <span style="color:#8a8a8a">│</span>
-<span style="color:#8a8a8a">│</span> 2026-10-29 05:55 UTC  <span style="color:#ffaf00">medium</span>  new_country ×2     <span style="color:#8a8a8a">││</span>                                                                  <span style="color:#8a8a8a">│</span>
+<span style="color:#8a8a8a">│</span> 2026-10-29 07:46 UTC  <span style="color:#ff5f5f">high</span>  spend_spike ×10      <span style="color:#8a8a8a">││</span>                                                                  <span style="color:#8a8a8a">│</span>
+<span style="color:#8a8a8a">│</span> 2026-10-29 07:46 UTC  <span style="color:#8a8a8a">low</span>  new_asn ×2            <span style="color:#8a8a8a">││</span>                                                                  <span style="color:#8a8a8a">│</span>
+<span style="color:#8a8a8a">│</span> 2026-10-29 07:46 UTC  <span style="color:#ffaf00">medium</span>  new_country ×2     <span style="color:#8a8a8a">││</span>                                                                  <span style="color:#8a8a8a">│</span>
 <span style="color:#8a8a8a">╰──────────────────────────────────────────────────╯╰──────────────────────────────────────────────────────────────────╯</span>
 
 <span style="color:#8a8a8a">p policy · r rotate · n name · d disable · e enable · x revoke · j/k scroll · esc back · q quit</span></pre>
@@ -381,7 +381,7 @@
           <li class="step" data-step="2">
             <span class="step-n">2</span>
             <h3>The alert lands in Slack</h3>
-            <p>Spend in the last hour hit $5.30 against a usual peak of $0.14. The alert names the address, the network and the model, and leads with the command to run.</p>
+            <p>Spend in the last hour crossed $5, far above this key’s usual hourly peak. The alert names the address, the network and the model, and leads with the command to run.</p>
             <div class="step-visual">
               <div class="slack">
                 <div class="chan"># security-alerts<small>Keman alerts</small></div>
@@ -389,17 +389,17 @@
                   <img src="logo.svg" alt="" width="36" height="36">
                   <div>
                     <div class="who">Keman<b>APP</b><small>4:31 PM</small></div>
-                    <div class="text" data-alert="spend_spike support-bot">[high] spend_spike on virtual key support-bot (eWjbqwBD) from 203.0.113.200 (BR, AS64510) calling POST /v1/messages
-evidence: {&quot;hour_microusd&quot;:5298533,&quot;model&quot;:&quot;claude-opus-4-5&quot;,&quot;p95_microusd&quot;:144411,&quot;threshold_microusd&quot;:5000000}
+                    <div class="text" data-alert="spend_spike support-bot">[high] spend_spike on virtual key support-bot (qWmeK8lJ) from 203.0.113.200 (BR, AS64510) calling POST /v1/messages
+evidence: {&quot;hour_microusd&quot;:5285189,&quot;model&quot;:&quot;claude-opus-4-5&quot;,&quot;p95_microusd&quot;:147195,&quot;threshold_microusd&quot;:5000000}
 what to do:
   Not you: issue a replacement and revoke the leaked key now
-    keman key rotate eWjbqwBD --grace 0
+    keman key rotate qWmeK8lJ --grace 0
   Not sure: turn it off until you know (reversible)
-    keman key disable eWjbqwBD
+    keman key disable qWmeK8lJ
   It was you: allow this address and nothing else
-    keman policy set eWjbqwBD --cidr 203.0.113.200/32
+    keman policy set qWmeK8lJ --cidr 203.0.113.200/32
   It was you: allow this country and nothing else
-    keman policy set eWjbqwBD --country BR</div>
+    keman policy set qWmeK8lJ --country BR</div>
                   </div>
                 </div>
               </div>
@@ -414,17 +414,18 @@ what to do:
                 <div class="bar"><i></i><i></i><i></i><span>keman · detections</span></div>
                 <pre class="term" data-capture="detections" style="--cols:118"><span style="font-weight:700">keman</span><span style="color:#8a8a8a"> · http://127.0.0.1:8081</span>                                                   <span style="color:#8a8a8a">1 keys</span>  <span style="color:#5fafff;font-weight:700;text-decoration:underline">2</span><span style="color:#5fafff;text-decoration:underline"> </span><span style="color:#5fafff;font-weight:700;text-decoration:underline">detections</span>  <span style="color:#8a8a8a">3 audit</span>  <span style="color:#8a8a8a">4 setup</span>
 <span style="color:#8a8a8a">  time                     severity  key                        rule</span>
-<span style="color:#5fafff;background:#3a3a3a;font-weight:700">› </span><span style="background:#3a3a3a;font-weight:700">2026-10-29 05:55 UTC   </span><span style="background:#3a3a3a">  </span><span style="color:#ffaf00;background:#3a3a3a;font-weight:700">medium  </span><span style="background:#3a3a3a">  </span><span style="background:#3a3a3a;font-weight:700">support-bot (eWjbqwBD)   </span><span style="background:#3a3a3a">  </span><span style="background:#3a3a3a;font-weight:700">new_country ×2</span>
-  2026-10-29 05:55 UTC     <span style="color:#8a8a8a">low     </span>  support-bot (eWjbqwBD)     new_asn ×2
-  2026-10-29 05:55 UTC     <span style="color:#ff5f5f">high    </span>  support-bot (eWjbqwBD)     spend_spike ×9
-  2026-10-29 05:55 UTC     <span style="color:#ffaf00">medium  </span>  prod-api (WreXPDjt)        new_country
-  2026-10-29 05:55 UTC     <span style="color:#8a8a8a">low     </span>  prod-api (WreXPDjt)        new_asn
-  2026-10-29 05:55 UTC     <span style="color:#ffaf00">medium  </span>  prod-api (WreXPDjt)        allowlist_violations ×2
-  2026-10-29 05:55 UTC     <span style="color:#ffaf00">medium  </span>  billing-svc (qRb2jsAg)     allowlist_violations ×3
-  2026-10-29 05:55 UTC     <span style="color:#ff5f5f">high    </span>  old-intern (M6FwpHWQ)      disabled_key_used ×4
-  2026-10-29 05:55 UTC     <span style="color:#ffaf00">medium  </span>  staging-worker (QF6eWCAY)  upstream_auth_burst ×3
-  2026-10-29 05:55 UTC     <span style="color:#ff5f5f">critical</span>  repo-decoy (ARKIgzmg)      canary_used
+<span style="color:#5fafff;background:#3a3a3a;font-weight:700">› </span><span style="background:#3a3a3a;font-weight:700">2026-10-29 07:46 UTC   </span><span style="background:#3a3a3a">  </span><span style="color:#ffaf00;background:#3a3a3a;font-weight:700">medium  </span><span style="background:#3a3a3a">  </span><span style="background:#3a3a3a;font-weight:700">support-bot (qWmeK8lJ)   </span><span style="background:#3a3a3a">  </span><span style="background:#3a3a3a;font-weight:700">new_country ×2</span>
+  2026-10-29 07:46 UTC     <span style="color:#8a8a8a">low     </span>  support-bot (qWmeK8lJ)     new_asn ×2
+  2026-10-29 07:46 UTC     <span style="color:#ff5f5f">high    </span>  support-bot (qWmeK8lJ)     spend_spike ×10
+  2026-10-29 07:46 UTC     <span style="color:#ffaf00">medium  </span>  prod-api (MjI3yW5z)        new_country
+  2026-10-29 07:46 UTC     <span style="color:#8a8a8a">low     </span>  prod-api (MjI3yW5z)        new_asn
+  2026-10-29 07:46 UTC     <span style="color:#ffaf00">medium  </span>  prod-api (MjI3yW5z)        allowlist_violations ×2
+  2026-10-29 07:46 UTC     <span style="color:#ffaf00">medium  </span>  billing-svc (2M1MxJLa)     allowlist_violations ×3
+  2026-10-29 07:46 UTC     <span style="color:#ff5f5f">high    </span>  old-intern (a2gxDT24)      disabled_key_used ×4
+  2026-10-29 07:46 UTC     <span style="color:#ffaf00">medium  </span>  staging-worker (YQqpsBqV)  upstream_auth_burst ×3
+  2026-10-29 07:46 UTC     <span style="color:#ff5f5f">critical</span>  repo-decoy (ZNDo8sy2)      canary_used
 
+<span style="color:#8a8a8a">loading…</span>
 <span style="color:#8a8a8a">j/k move · enter open key · / filter · 1-4 views · ? help · q quit</span></pre>
               </div>
             </div>
@@ -440,19 +441,19 @@ what to do:
 store the new virtual key (token) now; it is not shown again
 the old key is revoked and renamed &quot;support-bot (rotated)&quot;
 {
-  &quot;credential_id&quot;: &quot;cred_kMc9cUUTLW1e&quot;,
-  &quot;expires_at&quot;: &quot;2027-01-27T05:56:13Z&quot;,
-  &quot;id&quot;: &quot;qw4pwkQP&quot;,
+  &quot;credential_id&quot;: &quot;cred_Ua1jK69zd3vM&quot;,
+  &quot;expires_at&quot;: &quot;2027-01-27T07:47:09Z&quot;,
+  &quot;id&quot;: &quot;74U2UU5J&quot;,
   &quot;kind&quot;: &quot;standard&quot;,
   &quot;name&quot;: &quot;support-bot&quot;,
   &quot;replaced&quot;: {
     &quot;expires_at&quot;: null,
-    &quot;id&quot;: &quot;eWjbqwBD&quot;,
+    &quot;id&quot;: &quot;qWmeK8lJ&quot;,
     &quot;name&quot;: &quot;support-bot (rotated)&quot;,
     &quot;status&quot;: &quot;revoked&quot;
   },
   &quot;status&quot;: &quot;active&quot;,
-  &quot;token&quot;: &quot;kmn_qw4pwkQP_fQcSLfCAfneIl3wny6Wb8xWir2VCmoGG2jwyaa4IuKz&quot;
+  &quot;token&quot;: &quot;kmn_74U2UU5J_a16MAbXkL2rW3fTHoCzx20l8fPGc0kpYARbnxLlxsL4&quot;
 }</pre>
               </div>
             </div>
@@ -466,7 +467,7 @@ the old key is revoked and renamed &quot;support-bot (rotated)&quot;
                 <div class="bar"><i></i><i></i><i></i><span>request through Keman</span></div>
                 <pre class="term http" data-request="revoked"><span class="h-dim"># support-bot, called from 203.0.113.200 (BR, AS64510)</span>
 <span class="h-method">POST</span> /v1/messages
-<span class="h-hdr">x-api-key:</span> kmn_eWjbqwBD_…
+<span class="h-hdr">x-api-key:</span> kmn_qWmeK8lJ_…
 
 {<span class="j-key">&quot;model&quot;</span>: <span class="j-str">&quot;claude-opus-4-5&quot;</span>, <span class="j-key">&quot;max_tokens&quot;</span>: <span class="j-num">1024</span>, <span class="j-key">&quot;messages&quot;</span>: [{<span class="j-key">&quot;role&quot;</span>: <span class="j-str">&quot;user&quot;</span>, <span class="j-key">&quot;content&quot;</span>: <span class="j-str">&quot;hi&quot;</span>}]}
 
@@ -502,11 +503,11 @@ the old key is revoked and renamed &quot;support-bot (rotated)&quot;
           <div class="win">
             <div class="bar"><i></i><i></i><i></i><span>acme-api</span></div>
             <pre class="term" data-capture="canary" style="--cols:117"><span style="color:#5fafff">acme-api</span> <span style="color:#8a8a8a">$</span> keman canary create --credential openai-main --name decoy --base-url https://keman.example.com &gt;&gt; .env.bak
-canary decoy (CgrngVMh) created. Plant the lines above where a thief would look: a .env in a repo,
+canary decoy (Dh98cXlL) created. Plant the lines above where a thief would look: a .env in a repo,
 CI variables, an old config or a backup. Any use raises a critical alert and never reaches the upstream.
 Keep the snippet free of comments that mention keman or canaries.
 <span style="color:#5fafff">acme-api</span> <span style="color:#8a8a8a">$</span> cat .env.bak
-OPENAI_API_KEY=kmn_CgrngVMh_3WZbZ3Ndk6MlvxSFyEqersjEhBfwYG4VTSQVwVabp05
+OPENAI_API_KEY=kmn_Dh98cXlL_eLGVO5FpIj1FQ3bUnO7qemo9pAhOwvBlAh831fo6MFP
 OPENAI_BASE_URL=https://keman.example.com/v1</pre>
           </div>
           <div class="slack">
@@ -515,12 +516,12 @@ OPENAI_BASE_URL=https://keman.example.com/v1</pre>
               <img src="logo.svg" alt="" width="36" height="36">
               <div>
                 <div class="who">Keman<b>APP</b><small>4:32 PM</small></div>
-                <div class="text" data-alert="canary_used">[critical] canary_used on virtual key repo-decoy (ARKIgzmg) from 192.0.2.200 (NL, AS64511)
+                <div class="text" data-alert="canary_used">[critical] canary_used on virtual key repo-decoy (ZNDo8sy2) from 192.0.2.200 (NL, AS64511)
 evidence: {&quot;count&quot;:1}
 what to do:
   A decoy was used. Whoever has it also saw what was stored next to it. Rotate those real secrets.
   See every use of the decoy, with addresses
-    keman detection list --key ARKIgzmg</div>
+    keman detection list --key ZNDo8sy2</div>
               </div>
             </div>
           </div>
@@ -531,27 +532,27 @@ what to do:
         <div class="intro reveal">
           <p class="kicker">Find</p>
           <h2>Find the keys you already leaked</h2>
-          <p><code>keman scan</code> checks your files and every commit on every branch for OpenAI, Anthropic, OpenRouter, Stripe, GitHub, Slack, Google and AWS keys. It runs offline, needs no setup, and exits 3 so it can gate CI.</p>
+          <p><code>keman scan</code> checks your files and every commit on every branch for OpenAI, Anthropic, OpenRouter, Groq, xAI, Stripe, GitHub, Slack, SendGrid, Linear, Google and AWS keys, and names the preset that moves each one behind Keman. It runs offline, needs no setup, and exits 3 so it can gate CI.</p>
         </div>
         <div class="visual reveal">
           <div class="win">
             <div class="bar"><i></i><i></i><i></i><span>acme-api</span></div>
-            <pre class="term" data-capture="scan" style="--cols:125"><span style="color:#5fafff">acme-api</span> <span style="color:#8a8a8a">$</span> keman scan . --history
+            <pre class="term" data-capture="scan" style="--cols:92"><span style="color:#5fafff">acme-api</span> <span style="color:#8a8a8a">$</span> keman scan . --history
 found 2 secrets in 3 places
 
-Stripe  sk_live_…co1J
+Stripe  sk_live_…E48v
   config/settings.py:1
-  config/settings.py:1  (commit 49be1ec107d8)
+  config/settings.py:1  (commit 46e6d5a30d14)
   Move it behind Keman so apps only ever hold a virtual key:
-    keman upstream add --name stripe --profile generic --host api.stripe.com --port 443 --tls --path &quot;METHOD /path&quot;    (once)
+    keman upstream add --preset stripe    (once)
     keman credential add --upstream stripe --name stripe-main --secret-env STRIPE_SECRET_KEY
     keman key create --credential stripe-main --name &lt;app&gt; --expires 90d
   It is in git history, so treat it as leaked: rotate it at Stripe too.
 
-OpenAI  sk-proj-…8Htp
-  .env:1  (commit 2ade78f74bd7)
+OpenAI  sk-proj-…vVNf
+  .env:1  (commit 92f4f0f32a58)
   Move it behind Keman so apps only ever hold a virtual key:
-    keman upstream add --name openai --profile openai --host api.openai.com --port 443 --tls    (once)
+    keman upstream add --preset openai    (once)
     keman credential add --upstream openai --name openai-main --secret-env OPENAI_API_KEY
     keman key create --credential openai-main --name &lt;app&gt; --expires 90d
   It is in git history, so treat it as leaked: rotate it at OpenAI too.</pre>
@@ -569,15 +570,15 @@ OpenAI  sk-proj-…8Htp
           <div class="win">
             <div class="bar"><i></i><i></i><i></i><span>acme-api</span></div>
             <pre class="term" data-capture="exposure" style="--cols:78"><span style="color:#5fafff">acme-api</span> <span style="color:#8a8a8a">$</span> keman exposure
-staging-worker (QF6eWCAY)
+staging-worker (YQqpsBqV)
   high    Works from any address. A leaked copy works for anyone who finds it.
-          fix: keman policy set QF6eWCAY --cidr &lt;your egress IP&gt;/32
+          fix: keman policy set YQqpsBqV --cidr &lt;your egress IP&gt;/32
 
-support-bot (eWjbqwBD)
+support-bot (qWmeK8lJ)
   high    Works from any address. A leaked copy works for anyone who finds it.
-          fix: keman policy set eWjbqwBD --cidr &lt;your egress IP&gt;/32
+          fix: keman policy set qWmeK8lJ --cidr &lt;your egress IP&gt;/32
   medium  Never expires. A copy leaked years ago still works.
-          fix: keman key expiry eWjbqwBD 90d
+          fix: keman key expiry qWmeK8lJ 90d
 
 2 of 7 active keys would be easy to abuse if they leaked.</pre>
           </div>
@@ -595,9 +596,9 @@ support-bot (eWjbqwBD)
     <div class="box-grid reveal">
       <div class="box"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg><h3>Address and country locks</h3><p>Allow CIDRs and countries per key. Everything else is refused.</p></div>
       <div class="box"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><h3>Expiry by default</h3><p>New keys expire after 90 days. Set a date, a duration, or never.</p></div>
-      <div class="box"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h10a3 3 0 0 1 0 6h-4a3 3 0 0 0 0 6h10"/></svg><h3>Endpoint and model lists</h3><p>Built in for OpenAI and Anthropic, and required for every other API.</p></div>
-      <div class="box"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M16.5 7.5c-.8-1.4-2.4-2-4.5-2-2.6 0-4.2 1.2-4.2 3s1.6 2.6 4.2 3.2 4.5 1.4 4.5 3.3-1.9 3.2-4.5 3.2c-2.2 0-3.9-.8-4.7-2.4"/></svg><h3>Dollar caps</h3><p>Daily and monthly caps on LLM keys, reserved before each request.</p></div>
-      <div class="box"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18a8 8 0 1 1 16 0"/><path d="M12 18l4-6"/></svg><h3>Rate limits</h3><p>Requests per minute, per key.</p></div>
+      <div class="box"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h10a3 3 0 0 1 0 6h-4a3 3 0 0 0 0 6h10"/></svg><h3>Endpoint and model lists</h3><p>Every preset ships a path allowlist, and a custom API requires one. LLM keys can also be held to a list of models.</p></div>
+      <div class="box"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M16.5 7.5c-.8-1.4-2.4-2-4.5-2-2.6 0-4.2 1.2-4.2 3s1.6 2.6 4.2 3.2 4.5 1.4 4.5 3.3-1.9 3.2-4.5 3.2c-2.2 0-3.9-.8-4.7-2.4"/></svg><h3>Dollar caps and rate limits</h3><p>Daily and monthly caps on LLM keys, reserved before each request, and requests per minute on any key.</p></div>
+      <div class="box"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg><h3>21 platform presets</h3><p><code>keman upstream add --preset groq</code> fills in the host, TLS, paths and auth.</p></div>
       <div class="box"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v9"/><path d="M6.3 7.5a8 8 0 1 0 11.4 0"/></svg><h3>Auto-disable, with a dry run</h3><p>Let spikes and new countries turn a key off, after a 7-day dry run shows what would have tripped.</p></div>
       <div class="box"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg><h3>Planned rotation</h3><p>Rotate with a 1-hour, 24-hour or 7-day grace period, so both keys work while you deploy.</p></div>
       <div class="box"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l3 3M14 9l2 2"/></svg><h3>Swap the real key in place</h3><p><code>keman credential rotate</code> changes the provider key. Virtual keys keep working.</p></div>
@@ -674,7 +675,7 @@ docker run --rm -p 8080:8080 -v keman-data:/home/nonroot ghcr.io/kirank55/keman:
         </li>
 
         <li class="reveal">
-          <div class="setup-text"><span class="step-n">2</span><h3>Start it</h3><p><code>init</code> prints the admin token once. <code>keman</code> opens the terminal UI and starts the proxy. Press <code>a</code> to add your provider key, and the form for your first virtual key opens next.</p></div>
+          <div class="setup-text"><span class="step-n">2</span><h3>Start it</h3><p><code>init</code> prints the admin token once. <code>keman</code> opens the terminal UI and starts the proxy. Press <code>a</code>, pick your platform, and paste its key. The form for your first virtual key opens next.</p></div>
           <div class="setup-body">
             <div class="cmd" data-copy="keman init
 keman">
@@ -682,7 +683,7 @@ keman">
 <span class="prompt">$</span> keman         <span class="comment"># opens the terminal UI and starts the proxy</span></code>
               <button type="button" class="copy" aria-label="Copy">Copy</button>
             </div>
-            <p class="note">Prefer scripts? Every step is a command too: <code>keman upstream add</code>, <code>keman credential add --secret-env OPENAI_API_KEY</code>, <code>keman key create --name laptop</code>.</p>
+            <p class="note">Prefer scripts? Every step is a command too: <code>keman upstream add --preset openai</code>, <code>keman credential add --upstream openai --name primary --secret-env OPENAI_API_KEY</code>, <code>keman key create --credential primary --name laptop</code>.</p>
           </div>
         </li>
 
@@ -693,7 +694,8 @@ keman">
               <tr><th>OpenAI Python / Node SDK</th><td><code>http://127.0.0.1:8080/v1</code></td></tr>
               <tr><th>OpenRouter through Keman</th><td><code>http://127.0.0.1:8080/api/v1</code></td></tr>
               <tr><th>Anthropic SDK</th><td><code>http://127.0.0.1:8080</code></td></tr>
-              <tr><th>Stripe, GitHub, any header-auth API</th><td>The API’s own paths, limited to the ones you list</td></tr>
+              <tr><th>Groq, through the OpenAI SDK</th><td><code>http://127.0.0.1:8080/openai/v1</code></td></tr>
+              <tr><th>Every other platform</th><td><a href="https://github.com/kirank55/keman#supported-platforms">Base URLs for all 21 presets</a></td></tr>
             </table>
           </div>
         </li>
@@ -733,7 +735,7 @@ KEMAN_ADMIN_TOKEN=&quot;$(cat .demo/admin.token)&quot; .demo/keman --config .dem
       </details>
       <details>
         <summary>Which APIs does it work with?</summary>
-        <p>OpenAI-compatible APIs (including OpenRouter), Anthropic, and any HTTP API that authenticates with a header, such as Stripe or GitHub. Spend caps and model allowlists work for OpenAI and Anthropic. Generic APIs get a path allowlist, so a leaked key can only call the endpoints you listed.</p>
+        <p>Keman ships presets for 21 platforms: OpenAI, Anthropic, OpenRouter, Gemini, Groq, Mistral, DeepSeek, xAI, Together AI, Fireworks AI, Cerebras, Stripe, GitHub, Slack, Twilio, SendGrid, Resend, Postmark, Cloudflare, Linear and Notion. Any other HTTP API that takes a key in a header or HTTP Basic works too. LLM platforms get spend tracking, dollar caps and model allowlists. Every platform gets a path allowlist, so a leaked key can only call the endpoints you allow.</p>
       </details>
       <details>
         <summary>Can’t I just use provider-scoped keys or a secret scanner?</summary>

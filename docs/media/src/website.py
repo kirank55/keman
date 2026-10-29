@@ -5,9 +5,10 @@ Usage: python3 docs/media/src/website.py SHOTS_DIR [FONTS_DIR OG_HTML_DIR]
 Every <pre data-capture="NAME"> gets NAME.ans as colored HTML and --cols set
 to its widest line. Every element with data-alert="RULE [KEY]" gets the text
 of that Slack alert. Every <pre data-request="ID"> gets the HTTP exchange that
-requests.py recorded for scenario ID in SHOTS_DIR/requests.json. The page stays plain HTML, so website/ can be hosted as
-is. With FONTS_DIR and OG_HTML_DIR (as for build.py), also write og.html
-there for render.mjs to shoot as website/og.png.
+requests.py recorded for scenario ID in SHOTS_DIR/requests.json. The page
+stays plain HTML, so website/ can be hosted as is. With FONTS_DIR and
+OG_HTML_DIR (as for build.py), also write og.html there for render.mjs to
+shoot as website/og.png.
 """
 import html
 import json

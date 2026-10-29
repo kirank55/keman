@@ -19,7 +19,7 @@ Text:
 > Some details:
 >
 > - Single Go binary, pure-Go SQLite, no CGO. Terminal UI (Bubble Tea), CLI, and an admin API on localhost.
-> - OpenAI-compatible APIs (including OpenRouter), Anthropic, and any HTTP API that authenticates with a header (Stripe, GitHub). Generic APIs require a path allowlist.
+> - Presets for 21 platforms (OpenAI, Anthropic, OpenRouter, Gemini, Groq, Mistral, DeepSeek, xAI, Stripe, GitHub, Slack, Twilio and more), each with a path allowlist. Any other API that takes a key in a header or HTTP Basic works with an allowlist you write.
 > - Streaming is passed through unbuffered. For LLM calls it reads only `model`, `stream`, `max_tokens` and `stream_options` from the request, and the usage counts from the response. Bodies, headers and query strings are never logged.
 > - Real keys are encrypted at rest; virtual keys are stored as SHA-256 hashes.
 > - Overhead on loopback is about 71 µs p50 and 555 µs p99.
@@ -71,7 +71,7 @@ Thread. Attach the image named on each post.
 >
 > It also plants decoy keys that alert on first use, and `keman scan` finds the keys already in your git history.
 >
-> It works with OpenAI, Anthropic, OpenRouter, and any API that takes a key in a header, such as Stripe or GitHub. It's free and Apache-2.0.
+> It ships presets for 21 platforms, including OpenAI, Anthropic, OpenRouter, Gemini, Groq, Stripe, GitHub and Twilio, and works with any API that takes a key in a header. It's free and Apache-2.0.
 >
 > I'd value your feedback, especially from anyone who's had to clean up after a leaked key: PH_LINK
 
@@ -121,4 +121,4 @@ Lead with `keman scan . --history` and the threat model rather than the launch. 
 
 ## Short blurb (Discord, Slack communities, newsletters)
 
-> **Keman**: open-source protection from leaked API keys. A self-hosted proxy that gives apps virtual keys you can lock to IPs and countries, cap, expire, watch for abuse, and kill in one command, while the real key never leaves your box. Works with OpenAI, Anthropic, OpenRouter, Stripe, GitHub and any header-auth API. https://github.com/kirank55/keman
+> **Keman**: open-source protection from leaked API keys. A self-hosted proxy that gives apps virtual keys you can lock to IPs and countries, cap, expire, watch for abuse, and kill in one command, while the real key never leaves your box. Presets for 21 platforms, including OpenAI, Anthropic, OpenRouter, Groq, Stripe, GitHub and Twilio, plus any header-auth API. https://github.com/kirank55/keman

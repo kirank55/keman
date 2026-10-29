@@ -5,7 +5,7 @@ Starting points for the questions people will ask on launch day. Keep the answer
 ## "How is this different from…"
 
 **…the provider's own key controls?**
-Use them too. They differ from provider to provider, and many APIs have none. Keman gives every key the same address and country locks, expiry, caps, leak alerts, decoys and one-step rotation, across OpenAI, Anthropic, OpenRouter and header-auth APIs like Stripe and GitHub. The real key also never sits in the app, so a leak from the app can't expose it.
+Use them too. They differ from provider to provider, and many APIs have none. Keman gives every key the same address and country locks, expiry, caps, leak alerts, decoys and one-step rotation, across 21 platform presets (OpenAI, Anthropic, Groq, Stripe, GitHub, Twilio and more) and any other API that takes a key in a header. The real key also never sits in the app, so a leak from the app can't expose it.
 
 **…a secret scanner (GitHub secret scanning, gitleaks, trufflehog)?**
 Scanners tell you a key leaked, after the fact. Keman limits what the leaked copy can do and gives you one command to kill it. They work well together. Keman's own `keman scan . --history` exists to find the keys to move behind it, and the `kmn_` prefix makes virtual keys easy for scanners to spot.
